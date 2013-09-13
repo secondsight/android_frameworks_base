@@ -2680,7 +2680,7 @@ package android.app {
     method public abstract void onTabUnselected(android.app.ActionBar.Tab, android.app.FragmentTransaction);
   }
 
-  public class Activity extends android.view.ContextThemeWrapper implements android.content.ComponentCallbacks2 android.view.KeyEvent.Callback android.view.LayoutInflater.Factory2 android.view.View.OnCreateContextMenuListener android.view.Window.Callback {
+  public class Activity extends android.view.ContextThemeWrapper implements android.content.ComponentCallbacks2 android.view.KeyEvent.Callback android.view.LayoutInflater.Factory2 android.hardware.SensorEventListener android.view.View.OnCreateContextMenuListener android.view.Window.Callback {
     ctor public Activity();
     method public void addContentView(android.view.View, android.view.ViewGroup.LayoutParams);
     method public void closeContextMenu();
@@ -2736,6 +2736,7 @@ package android.app {
     method public boolean moveTaskToBack(boolean);
     method public boolean navigateUpTo(android.content.Intent);
     method public boolean navigateUpToFromChild(android.app.Activity, android.content.Intent);
+    method public void onAccuracyChanged(android.hardware.Sensor, int);
     method public void onActionModeFinished(android.view.ActionMode);
     method public void onActionModeStarted(android.view.ActionMode);
     method protected void onActivityResult(int, int, android.content.Intent);
@@ -2791,6 +2792,7 @@ package android.app {
     method public deprecated java.lang.Object onRetainNonConfigurationInstance();
     method protected void onSaveInstanceState(android.os.Bundle);
     method public boolean onSearchRequested();
+    method public void onSensorChanged(android.hardware.SensorEvent);
     method protected void onStart();
     method protected void onStop();
     method protected void onTitleChanged(java.lang.CharSequence, int);
@@ -10129,7 +10131,6 @@ package android.hardware {
     method public int getJpegQuality();
     method public int getJpegThumbnailQuality();
     method public android.hardware.Camera.Size getJpegThumbnailSize();
-    method public java.lang.String getPowerMode();
     method public int getMaxExposureCompensation();
     method public int getMaxNumDetectedFaces();
     method public int getMaxNumFocusAreas();
@@ -10139,6 +10140,7 @@ package android.hardware {
     method public int getMinExposureCompensation();
     method public int getPictureFormat();
     method public android.hardware.Camera.Size getPictureSize();
+    method public java.lang.String getPowerMode();
     method public android.hardware.Camera.Size getPreferredPreviewSizeForVideo();
     method public int getPreviewFormat();
     method public void getPreviewFpsRange(int[]);
