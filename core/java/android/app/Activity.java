@@ -18,6 +18,7 @@ package android.app;
 
 import com.android.internal.app.ActionBarImpl;
 import com.android.internal.policy.PolicyManager;
+import com.aether.houyi.SensorFusion2;
 
 import android.content.ComponentCallbacks2;
 import android.content.ComponentName;
@@ -44,6 +45,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.opengl.Matrix;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -52,7 +54,6 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.RemoteException;
-import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.os.UserHandle;
 import android.text.Selection;
@@ -648,7 +649,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * or finished.
  */
 public class Activity extends ContextThemeWrapper
-        implements LayoutInflater.Factory2, SensorEventListener,
+        implements LayoutInflater.Factory2,
         Window.Callback, KeyEvent.Callback,
         OnCreateContextMenuListener, ComponentCallbacks2 {
     private static final String TAG = "Activity";
@@ -905,7 +906,9 @@ public class Activity extends ContextThemeWrapper
         getApplication().dispatchActivityCreated(this, savedInstanceState);
         mCalled = true;
         
-        mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);	
+        // Sensor Fusion start
+        mSensorFusion = SensorFusion2.getInstance(this);
+        // Sensor Fusion end
     }
 
     /**
@@ -1099,11 +1102,15 @@ public class Activity extends ContextThemeWrapper
     protected void onResume() {
         if (DEBUG_LIFECYCLE) Slog.v(TAG, "onResume " + this);
         getApplication().dispatchActivityResumed(this);
-        mInitAzimuthState = INVALID_AZIMUTH;
-        mInitAzimuth = 0;
-        mTick = 0;
         mCalled = true;
-        registerSensor();
+        
+        // Sensor Fusion start
+        if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        	mSensorFusion.start();
+        } else {
+        	mSensorFusion.stop();
+        }
+        // Sensor Fusion end
     }
 
     /**
@@ -1294,7 +1301,10 @@ public class Activity extends ContextThemeWrapper
         if (DEBUG_LIFECYCLE) Slog.v(TAG, "onPause " + this);
         getApplication().dispatchActivityPaused(this);
         mCalled = true;
-        unregisterSensor();
+        
+        // Sensor Fusion start
+        mSensorFusion.stop();
+        // Sensor Fusion end
     }
 
     /**
@@ -1495,6 +1505,14 @@ public class Activity extends ContextThemeWrapper
             // view changes from above.
             mActionBar.onConfigurationChanged(newConfig);
         }
+        
+        // Sensor Fusion start
+        if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        	mSensorFusion.start();
+        } else {
+        	mSensorFusion.stop();
+        }
+        // Sensor Fusion end
     }
     
     /**
@@ -2436,6 +2454,13 @@ public class Activity extends ContextThemeWrapper
         if (ev.getAction() == MotionEvent.ACTION_DOWN) {
             onUserInteraction();
         }
+        
+        // Sensor Fusion start
+        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        	mSensorFusion.dispatchTouchEvent(ev);
+        }
+        // Sensor Fusion end
+        
         if (getWindow().superDispatchTouchEvent(ev)) {
             return true;
         }
@@ -5344,255 +5369,6 @@ public class Activity extends ContextThemeWrapper
     }
     
     // Sensor Fusion start
-    private static final int CMD_UPDATE_SENSOR = 2000;
-	
-    private static final int INVALID_AZIMUTH = 1;
-    private static final int IGNORING_AZIMUTH = 2;
-    private static final int COLLECT_AZIMUTH = 3;
-
-    private SensorManager mSensorManager;
-
-    private float[] mAcceleratorData = new float[3];
-    private float[] mSensorMagData = new float[3];
-    
-    private float[] mRotationMatrix = new float[16];
-    private float[] mFinalRotationMatrix = new float[16];
-    private float[] mInclinationMatrix = new float[16];
-    private float[] mFinalInclinationMatrix = new float[16];
-    private float[] mDefOrientation = new float[3];//portrait orientation
-    private float[] mOrientation = new float[3];
-    private float[] mQuaternion = new float[4];
-
-    private boolean mHasSensor;
-    private boolean mHasGravity;
-
-    private AtomicReference<Float> mAzimuth = new AtomicReference<Float>();
-    private AtomicReference<Float> mInclination = new AtomicReference<Float>();
-
-    private int mTick;
-    private int mInitAzimuthState = INVALID_AZIMUTH;
-    private float mInitAzimuth;
-    private float mAzimuthRange = (float)(30.0 * Math.PI / 180);
-    private float mDefInclination = (float)(70.0 * Math.PI / 180);
-    private float mInclinationRange = (float)(Math.PI / 2 - mDefInclination);
-    
-    private int mScreenRotation;
-    
-    private void notifySensorChanged() {
-        // magic communication with surface flinger.
-        try {
-        	if (mAzimuth.get() == null || mInclination.get() == null) {
-        		return;
-        	}
-    		float azimuth = mAzimuth.get();
-    		float inclination = mInclination.get();
-//    		Log.d("Alfred", "sensor info updated: azimuth=" + azimuth + ", inclination=" + inclination);
-    		
-            float delAzimuth = (float)(azimuth - mInitAzimuth);
-            float min = (float)clampBetweenZeroAnd2PI(mInitAzimuth - mAzimuthRange);
-            float max = (float)clampBetweenZeroAnd2PI(mInitAzimuth + mAzimuthRange);
-            float clampedAzimuth = delAzimuth;
-            
-            if (max > min) { // Normal case
-            	float absAngleMin = (float)getSmallerAngle(azimuth, min);
-            	float absAngleMax = (float)getSmallerAngle(azimuth, max);
-            	float minRefAzimuth = (float)((azimuth > max && absAngleMin < absAngleMax) ? azimuth - PI2 : azimuth);
-            	float maxRefAzimuth = (float)((azimuth < min && absAngleMax < absAngleMin) ? azimuth + PI2 : azimuth);
-            	if (minRefAzimuth < min && absAngleMin < absAngleMax) {
-            		mInitAzimuth -= absAngleMin; 
-//            		Log.d(TAG, "A " + mInitAzimuth + "; min/max = " + min + ", " + max);
-            	} else if (maxRefAzimuth > max && absAngleMax < absAngleMin) {
-            		mInitAzimuth += absAngleMax; 
-//            		Log.d(TAG, "B " + mInitAzimuth + "; min/max = " + min + ", " + max);
-            	}
-            } else if (azimuth > max && azimuth < min){
-            	if (azimuth > max && azimuth - max < min - azimuth) {
-            		mInitAzimuth += azimuth - max; 
-//            		Log.d(TAG, "C " + mInitAzimuth + "; min/max = " + min + ", " + max);
-            	} else if (azimuth < min && azimuth - max > min - azimuth) {
-            		mInitAzimuth -= min - azimuth; 
-//            		Log.d(TAG, "D " + mInitAzimuth + "; min/max = " + min + ", " + max);
-            	} else {
-//            		Log.d(TAG, "E " + mInitAzimuth + "; min/max = " + min + ", " + max);
-            	}
-            }
-            double delta = getSmallerAngle(azimuth, mInitAzimuth);
-            if (Math.abs(delta) < 0.025f) {
-            	mInitAzimuth = azimuth;
-            } else {
-            	double step = delta / 40;
-            	double attemp = Math.abs(getSmallerAngle(azimuth, clampBetweenZeroAnd2PI(mInitAzimuth + step)));
-            	if (attemp < delta) {
-        			mInitAzimuth += step;
-            	} else {
-	                mInitAzimuth -= step;
-            	}
-            }
-            mInitAzimuth = (float)clampBetweenZeroAnd2PI(mInitAzimuth);
-            
-            float clampedInclination = clampInclination(inclination, mInclinationRange);
-            
-            IBinder flinger = ServiceManager.getService("SurfaceFlinger");
-            if (flinger != null) {
-                Parcel data = Parcel.obtain();
-                Parcel reply = Parcel.obtain();
-                data.writeFloat(-clampedAzimuth);
-                data.writeFloat(clampedInclination);
-                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
-                reply.recycle();
-                data.recycle();
-            }
-        } catch (RemoteException ex) {
-        }
-    }
-    
-    private void registerSensor() {
-        if(mSensorManager != null){
-            mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY), SensorManager.SENSOR_DELAY_GAME);
-            mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_GAME);
-            mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD), SensorManager.SENSOR_DELAY_GAME);
-            mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE), SensorManager.SENSOR_DELAY_GAME);
-        }
-    }
-    
-    private void unregisterSensor() {
-        if(mSensorManager != null){
-            mSensorManager.unregisterListener(this);
-        }
-    }
-    
-    private void resetSenorInitialValues() {
-        mInitAzimuthState = INVALID_AZIMUTH;
-        mTick = 0;
-    }
-
-    /**{@hide}*/
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }    
-
-    /**{@hide}*/
-    @Override
-    public void onSensorChanged(SensorEvent event)
-    {
-        mHasSensor = true;
-        
-        int o = mWindowManager.getDefaultDisplay().getRotation();
-        if (mScreenRotation != o) {
-            mScreenRotation = o;
-            resetSenorInitialValues();
-        }        
-        
-        float[] values = event.values;
-        switch(event.sensor.getType())
-        {
-            case Sensor.TYPE_GRAVITY:
-                mAcceleratorData[0] = values[0];
-                mAcceleratorData[1] = values[1];
-                mAcceleratorData[2] = values[2];
-                mHasGravity = true;
-                break;
-                
-            case Sensor.TYPE_ACCELEROMETER:
-                if (mHasGravity) {
-                    break;
-                }
-                mAcceleratorData[0] = values[0];
-                mAcceleratorData[1] = values[1];
-                mAcceleratorData[2] = values[2];
-                break;
-            case Sensor.TYPE_MAGNETIC_FIELD:
-                mSensorMagData[0] = values[0];
-                mSensorMagData[1] = values[1];
-                mSensorMagData[2] = values[2];
-                break;
-            case Sensor.TYPE_GYROSCOPE:
-            {
-                SensorManager.getRotationMatrix(mRotationMatrix, mInclinationMatrix, mAcceleratorData, mSensorMagData);
-                if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    SensorManager.remapCoordinateSystem(mRotationMatrix,
-                        SensorManager.AXIS_MINUS_Y, SensorManager.AXIS_X, mFinalRotationMatrix);
-                    SensorManager.remapCoordinateSystem(mInclinationMatrix,
-                            SensorManager.AXIS_Y, SensorManager.AXIS_MINUS_X, mFinalInclinationMatrix);
-                } else {
-                    System.arraycopy(mRotationMatrix, 0, mFinalRotationMatrix, 0, mRotationMatrix.length);
-                    System.arraycopy(mInclinationMatrix, 0, mFinalInclinationMatrix, 0, mInclinationMatrix.length);
-                }
-                SensorManager.getOrientation(mFinalRotationMatrix, mOrientation);
-                SensorManager.getOrientation(mRotationMatrix, mDefOrientation);
-                
-                // inclination
-                float inclination = mOrientation[1];
-                if (mScreenRotation == Surface.ROTATION_270) {
-                    inclination = -inclination;
-                }
-            	mInclination.set(inclination);
-            	
-            	// azimuth
-            	mDefOrientation[0] += Math.PI; // 0 ~ 2PI
-            	setAzimuth(mDefOrientation[0]);
-            	notifySensorChanged();
-            	
-            	mTick++;
-            }
-                break;
-        }
-    }
-    
-
-    private void setAzimuth(float azimuth) {
-        if (mInitAzimuthState == INVALID_AZIMUTH) {
-            if (mTick >= 10) {
-                mInitAzimuthState = IGNORING_AZIMUTH;
-            }
-        } else if (mInitAzimuthState == IGNORING_AZIMUTH) { // Average next 10?
-            mInitAzimuth = azimuth;
-            mInitAzimuthState = COLLECT_AZIMUTH;
-        }
-        
-        if (mInitAzimuthState == COLLECT_AZIMUTH){
-            mAzimuth.set(azimuth);
-        }
-    }
-    
-    private float clampInclination(float input, float range) {
-    	float res = input - mDefInclination;
-    	if (res > range) {
-    		res = range;
-    	} else if (res < -range) {
-    		res = -range;
-    	}
-    	return res;
-    }
-    
-    // util
-    private static double PI2 = Math.PI * 2;
-    private static double clampBetweenZeroAnd2PI(double angle) {
-		double res = angle;
-		
-		while (res < 0) {
-			res += PI2;
-		} 
-		while (res > PI2) {
-			res -= PI2;
-		}
-		return res;
-	}
-	
-	// return angle between 0~PI
-    private static double getSmallerAngle(double a1, double a2) {
-		double ca1 = clampBetweenZeroAnd2PI(a1);
-		double ca2 = clampBetweenZeroAnd2PI(a2);
-		double angle = Math.abs(ca1 - ca2);
-		if (angle > Math.PI) {
-			angle = PI2 - angle;
-		}
-		return angle;
-	}
-	
+    private SensorFusion2 mSensorFusion;
     // Sensor Fusion end
 }
