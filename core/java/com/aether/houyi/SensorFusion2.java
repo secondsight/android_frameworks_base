@@ -494,7 +494,6 @@ public class SensorFusion2 implements SensorEventListener {
             }
         } else if (mInitAzimuthState == STATE_IGNORE) { // Average next 10?
             mInitAzimuth = azimuth;
-            Log.e("Lance", "init = " + azimuth);
             mInitAzimuthState = STATE_COLLECT;
         } else if (mInitAzimuthState == STATE_COLLECT){
             mAzimuth = azimuth;
@@ -605,8 +604,8 @@ public class SensorFusion2 implements SensorEventListener {
             float[] camMat = mCam.getViewMatrix();
             Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
             
-            Log.d("Lance", "ia = " + mInitAzimuth + " a = " + azimuth);
-            Log.d("Lance", "ii = " + mInitInclination + " i = " + inclination);
+//            Log.d("Lance", "ia = " + mInitAzimuth + " a = " + azimuth);
+//            Log.d("Lance", "ii = " + mInitInclination + " i = " + inclination);
             
             // magic communication with surface flinger.
             IBinder flinger = ServiceManager.getService("SurfaceFlinger");
