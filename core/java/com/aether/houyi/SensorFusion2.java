@@ -87,6 +87,11 @@ public class SensorFusion2 implements SensorEventListener {
     private float[] mBgMatrix = new float[16];
     private float[] mBgMatrixFlipped = new float[16];
     private float[] mTempMatrix = new float[16];
+    private float[] mCamMat = new float[16];
+    private float[] mResLookat = new float[4];
+    private float[] mResUp = new float[4];
+    private float[] mSrcLookat = {0, 0, -1, 1};
+    private float[] mSrcUp = {0, 1, 0, 1};
 
     private boolean mHasSensor;
     private boolean mHasGravity;
@@ -106,6 +111,8 @@ public class SensorFusion2 implements SensorEventListener {
     private int mInitAzimuthState = STATE_INVALID;
     private float mInitAzimuth;
     private float mAzimuthRange = (float)(30.0 * Math.PI / 180);
+    private float mFOV = 45;
+    private float mDefZ = -2.4142f;
     
     private int mScreenRotation;
     private static SensorFusion2 mIns;
@@ -205,19 +212,19 @@ public class SensorFusion2 implements SensorEventListener {
         	ev.setLocation(mappedx, mappedy);
         } else {
 	        // generate perspective projection matrix
-            Util.glhPerspectivef(mProjectionMatrix, 90, width/2/(float)height, 0.1f, 1000);
+            Util.glhPerspectivef(mProjectionMatrix, mFOV, width/2/(float)height, 0.1f, 1000);
 	        boolean print = true;
 	        float mirrorWidth = width / 2;
 	        float nx = 2 * sx / mirrorWidth - 1;
 	        float ny = 1 - 2 * mappedy / height;
 	        if (print) Log.d("Lance", "nx = " + nx + " ny = " + ny);
 	        
-//	        Matrix.invertM(mProjectionMatrixInv, 0, mProjectionMatrix, 0);
-//	        HVector eye = HMatrix.multiply(mProjectionMatrixInv, nx, ny, -1);
-//	        if (print) Log.i("Lance", "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
+	        Matrix.invertM(mProjectionMatrixInv, 0, mProjectionMatrix, 0);
+	        HVector eye = HMatrix.multiply(mProjectionMatrixInv, nx, ny, mDefZ);
+            if (print) Log.i("Lance", "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
 	        
 	        Matrix.invertM(mViewMatrixInv, 0, mViewMatrix, 0);
-	        HVector world = HMatrix.multiply(mViewMatrixInv, nx, ny, -1);
+	        HVector world = HMatrix.multiply(mViewMatrixInv, eye.x * mDefZ / (eye.z), eye.y * mDefZ / (eye.z), mDefZ);
 	        if (world != null) {
 		        if (print) Log.w("Lance", "worldx = " + world.x + " worldy = " + world.y + " worldz = " + world.z);
 		        
@@ -470,7 +477,7 @@ public class SensorFusion2 implements SensorEventListener {
     
     private void setInclination(float inclination) {
         if (mScreenRotation == Surface.ROTATION_270) {
-            inclination = -inclination;
+//            inclination = -inclination;
         }
         
         if (mInitInclinationState == STATE_INVALID) {
@@ -488,6 +495,10 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     private void setAzimuth(float azimuth) {
+    	if (mScreenRotation == Surface.ROTATION_90) {
+    		azimuth = -azimuth;
+      }
+    	
         if (mInitAzimuthState == STATE_INVALID) {
             if (mTick >= 30) {
                 mInitAzimuthState = STATE_IGNORE;
@@ -586,20 +597,21 @@ public class SensorFusion2 implements SensorEventListener {
             }
             mInitInclination = (float)clampBetweenZeroAnd2PI(mInitInclination);
             
-            if (mInitAzimuthState != STATE_INVALID) {
-                lookat.rotate(HVector.BASICY, azimuth);
-            }
-            if (mInitInclinationState != STATE_INVALID) {
-                lookat.rotate(HVector.BASICX, inclination);
+            if (mInitAzimuthState != STATE_INVALID && mInitInclinationState != STATE_INVALID) {
+            	Matrix.setIdentityM(mCamMat, 0);
+            	Matrix.rotateM(mCamMat, 0, (float)((inclination - mInitInclination) * 180 / Math.PI), 1, 0, 0);
+                Matrix.rotateM(mCamMat, 0, (float)(-clampedAzimuth * 180 / Math.PI), 0, 1, 0);
+                Matrix.multiplyMV(mResLookat, 0, mCamMat, 0, mSrcLookat, 0);
+                Matrix.multiplyMV(mResUp, 0, mCamMat, 0, mSrcUp, 0);
+                mCam.setLookAt(mResLookat[0], mResLookat[1], mResLookat[2]);
+                mCam.setUp(mResUp[0], mResUp[1], mResUp[2]);
             }
             
-            mCam.setLookAt(lookat.x, lookat.y, lookat.z);
-            mCam.setUp(0, 1, 0);
             mCam.update();
             
             Matrix.setIdentityM(mTempMatrix, 0);
-            Matrix.translateM(mTempMatrix, 0, 0, 0, -1f);
-//            Matrix.scaleM(mTempMatrix, 0, 1, 0.5f, 1);
+            Matrix.translateM(mTempMatrix, 0, 0, 0, mDefZ);
+            Matrix.scaleM(mTempMatrix, 0, 0.8f, 0.4f, 1);
             
             float[] camMat = mCam.getViewMatrix();
             Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
