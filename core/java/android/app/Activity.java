@@ -5369,6 +5369,6 @@ public class Activity extends ContextThemeWrapper
     }
     
     // Sensor Fusion start
-    private SensorFusion2 mSensorFusion;
+    protected SensorFusion2 mSensorFusion;
     // Sensor Fusion end
 }

@@ -62,6 +62,7 @@ public class SensorFusion2 implements SensorEventListener {
     private boolean mIsActive;
     
     private static final int CMD_UPDATE_SENSOR = 2000;
+    private static final int SENSOR_INIT_DELAY = 100;
 	
     private static final int INVALID_AZIMUTH = 1;
     private static final int IGNORING_AZIMUTH = 2;
@@ -95,24 +96,28 @@ public class SensorFusion2 implements SensorEventListener {
 
     private boolean mHasSensor;
     private boolean mHasGravity;
-
-    private float mAzimuth;
-    private float mInclination;
-
     private HVector mCamLookAt = new HVector(0, 0, -1);
-    private HCamera mCam = new HCamera(new HVector(0, 0, 0), mCamLookAt, 0);
+    
+    public float mAzimuth;
+    public float mInclination;
+    public HCamera mCam = new HCamera(new HVector(0, 0, 0), mCamLookAt, 0);
+    public float mInitInclination;
+    public float mInitAzimuth;
+    public boolean mOverrideTouchEvent = true;
+    public float mFOV = 45;
+    public float mDefZ = -2.4142f;
+    public float mZScale = 0.8f;
+    public float mCamRot = 0f;
+    public float mCamDis = 0.13f;
+    
     private float mDefInclination = (float)(90.0 * Math.PI / 180);
-    private float mInitInclination;
     private int mInitInclinationState = STATE_INVALID;
     private static final int STATE_INVALID = 1;
     private static final int STATE_IGNORE = 2;
     private static final int STATE_COLLECT = 3;
     private int mTick;
     private int mInitAzimuthState = STATE_INVALID;
-    private float mInitAzimuth;
     private float mAzimuthRange = (float)(30.0 * Math.PI / 180);
-    private float mFOV = 45;
-    private float mDefZ = -2.4142f;
     
     private int mScreenRotation;
     private static SensorFusion2 mIns;
@@ -193,47 +198,80 @@ public class SensorFusion2 implements SensorEventListener {
     }
 
     public void dispatchTouchEvent(MotionEvent ev) {
+    	// for testing app, set mOverrideTouchEvent false and override
+    	// dispatchTouchEvent in Activity
+    	if (!mOverrideTouchEvent) return;
+    	
+    	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
+		
+		int o = mScreenRotation;
+		
+		float azimuth = mAzimuth;
+		float initAzimuth = mInitAzimuth;
+        float delAzimuth = azimuth - initAzimuth;
+
+        float initInc = mInitInclination;
+        float inclination = mInclination;
+        float delInc = inclination - initInc;
+        if (o == Surface.ROTATION_270) {
+        	delInc = -delInc;
+        }
+        if (o == Surface.ROTATION_90) {
+        	delAzimuth = -delAzimuth;
+        }
+        
+        if (print) Log.d("LanceT", "i = " + (inclination - initInc) + " a = " + (azimuth - initAzimuth));
+        
+    	Matrix.setIdentityM(mCamMat, 0);
+    	Matrix.rotateM(mCamMat, 0, (float)(delInc * 180 / Math.PI), 1, 0, 0);
+        Matrix.rotateM(mCamMat, 0, (float)(-delAzimuth * 180 / Math.PI), 0, 1, 0);
+        Matrix.multiplyMV(mResLookat, 0, mCamMat, 0, mSrcLookat, 0);
+        Matrix.multiplyMV(mResUp, 0, mCamMat, 0, mSrcUp, 0);
+        mCam.setLookAt(mResLookat[0], mResLookat[1], mResLookat[2]);
+        mCam.setUp(mResUp[0], mResUp[1], mResUp[2]);
+        
+        mCam.update();
+        
+        mDefZ = (float)(- 1 / Math.tan(mFOV/2 * Math.PI / 180));
+        Matrix.setIdentityM(mTempMatrix, 0);
+        Matrix.translateM(mTempMatrix, 0, 0, 0, mDefZ);
+        Matrix.scaleM(mTempMatrix, 0, 0.8f, 0.4f, 1);
+        
+        float[] camMat = mCam.getViewMatrix();
+        Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
+        
     	float width = mActivity.getWindow().getDecorView().getWidth();
     	float height = mActivity.getWindow().getDecorView().getHeight();
     	
         // get content view bound
-    	android.view.View v = mActivity.getWindow().findViewById(Window.ID_ANDROID_CONTENT);
     	float sx = ev.getX();
     	float sy = ev.getY();
         if (sx > width / 2) {
         	sx -= width / 2;
         }
-        float mappedx = sx * 2;
-        float mappedy = sy * 2 - height / 2 - v.getTop() / 4;
-        Log.d("Lance", "w = " + width + " h = " + height + " sx = " + sx + " sy = " + sy + " mappedx = " + mappedx + " mappedy = " + mappedy);
+        if (print) Log.d("LanceT", "w = " + width + " h = " + height + " sx = " + sx + " sy = " + sy);
         
-        if (Math.abs(mInitInclination - mInclination) < 0.05f
-        		&& Math.abs(mInitAzimuth - mAzimuth) < 0.05f) {
-        	ev.setLocation(mappedx, mappedy);
-        } else {
-	        // generate perspective projection matrix
-            Util.glhPerspectivef(mProjectionMatrix, mFOV, width/2/(float)height, 0.1f, 1000);
-	        boolean print = true;
-	        float mirrorWidth = width / 2;
-	        float nx = 2 * sx / mirrorWidth - 1;
-	        float ny = 1 - 2 * mappedy / height;
-	        if (print) Log.d("Lance", "nx = " + nx + " ny = " + ny);
+        // generate perspective projection matrix
+        Util.glhPerspectivef(mProjectionMatrix, mFOV, 1, 0.1f, 1000);
+        
+        float mirrorWidth = width / 2;
+        float nx = 2 * sx / mirrorWidth - 1;
+        float ny = 1 - 2 * sy / height;
+        if (print) Log.d("LanceT", "nx = " + nx + " ny = " + ny);
+        
+        Matrix.invertM(mProjectionMatrixInv, 0, mProjectionMatrix, 0);
+        HVector eye = HMatrix.multiply(mProjectionMatrixInv, nx, ny, 0);
+        if (print) Log.i("LanceT", "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
+        
+        Matrix.invertM(mViewMatrixInv, 0, mViewMatrix, 0);
+        HVector world = HMatrix.multiply(mViewMatrixInv, eye.x * mDefZ / (eye.z), eye.y * mDefZ / (eye.z), mDefZ);
+        if (world != null) {
+	        if (print) Log.w("LanceT", "worldx = " + world.x + " worldy = " + world.y + " worldz = " + world.z);
 	        
-	        Matrix.invertM(mProjectionMatrixInv, 0, mProjectionMatrix, 0);
-	        HVector eye = HMatrix.multiply(mProjectionMatrixInv, nx, ny, mDefZ);
-            if (print) Log.i("Lance", "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
-	        
-	        Matrix.invertM(mViewMatrixInv, 0, mViewMatrix, 0);
-	        HVector world = HMatrix.multiply(mViewMatrixInv, eye.x * mDefZ / (eye.z), eye.y * mDefZ / (eye.z), mDefZ);
-	        if (world != null) {
-		        if (print) Log.w("Lance", "worldx = " + world.x + " worldy = " + world.y + " worldz = " + world.z);
-		        
-		        float outx = (0.5f + world.x/2) * width;
-		        float outy = (0.5f - world.y/2) * height;
-//		        outy = outy * 2 - height / 2 - v.getTop() / 4;
-		        if (print) Log.e("Lance", "screenx = " + outx + " screeny = " + outy);
-		        ev.setLocation(outx, outy);
-	        }
+	        float outx = (0.5f + world.x/2) * width;
+	        float outy = (0.5f - world.y/2) * height;
+	        if (print) Log.e("LanceT", "screenx = " + outx + " screeny = " + outy);
+	        ev.setLocation(outx, outy);
         }
     }
     
@@ -481,7 +519,7 @@ public class SensorFusion2 implements SensorEventListener {
         }
         
         if (mInitInclinationState == STATE_INVALID) {
-            if (mTick >= 30) {
+            if (mTick >= SENSOR_INIT_DELAY) {
                 mInitInclinationState = STATE_IGNORE;
             }
         } else if (mInitInclinationState == STATE_IGNORE) { // Average next 10?
@@ -500,7 +538,7 @@ public class SensorFusion2 implements SensorEventListener {
       }
     	
         if (mInitAzimuthState == STATE_INVALID) {
-            if (mTick >= 30) {
+            if (mTick >= SENSOR_INIT_DELAY) {
                 mInitAzimuthState = STATE_IGNORE;
             }
         } else if (mInitAzimuthState == STATE_IGNORE) { // Average next 10?
@@ -527,7 +565,7 @@ public class SensorFusion2 implements SensorEventListener {
     
     private void notifySensorChanged() {
         try {
-        	if (mTick < 30) {
+        	if (mTick < SENSOR_INIT_DELAY) {
         		return;
         	}
         	
@@ -597,38 +635,26 @@ public class SensorFusion2 implements SensorEventListener {
             }
             mInitInclination = (float)clampBetweenZeroAnd2PI(mInitInclination);
             
-            if (mInitAzimuthState != STATE_INVALID && mInitInclinationState != STATE_INVALID) {
-            	Matrix.setIdentityM(mCamMat, 0);
-            	Matrix.rotateM(mCamMat, 0, (float)((inclination - mInitInclination) * 180 / Math.PI), 1, 0, 0);
-                Matrix.rotateM(mCamMat, 0, (float)(-clampedAzimuth * 180 / Math.PI), 0, 1, 0);
-                Matrix.multiplyMV(mResLookat, 0, mCamMat, 0, mSrcLookat, 0);
-                Matrix.multiplyMV(mResUp, 0, mCamMat, 0, mSrcUp, 0);
-                mCam.setLookAt(mResLookat[0], mResLookat[1], mResLookat[2]);
-                mCam.setUp(mResUp[0], mResUp[1], mResUp[2]);
-            }
-            
-            mCam.update();
-            
-            Matrix.setIdentityM(mTempMatrix, 0);
-            Matrix.translateM(mTempMatrix, 0, 0, 0, mDefZ);
-            Matrix.scaleM(mTempMatrix, 0, 0.8f, 0.4f, 1);
-            
-            float[] camMat = mCam.getViewMatrix();
-            Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
-            
 //            Log.d("Lance", "ia = " + mInitAzimuth + " a = " + azimuth);
 //            Log.d("Lance", "ii = " + mInitInclination + " i = " + inclination);
             
-            // magic communication with surface flinger.
-            IBinder flinger = ServiceManager.getService("SurfaceFlinger");
-            if (flinger != null) {
-                Parcel data = Parcel.obtain();
-                Parcel reply = Parcel.obtain();
-                data.writeFloat(-clampedAzimuth);
-                data.writeFloat(inclination - mInitInclination);
-                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
-                reply.recycle();
-                data.recycle();
+            if (mInitAzimuthState != STATE_INVALID && mInitInclinationState != STATE_INVALID) {
+	            // magic communication with surface flinger.
+	            IBinder flinger = ServiceManager.getService("SurfaceFlinger");
+	            if (flinger != null) {
+	                Parcel data = Parcel.obtain();
+	                Parcel reply = Parcel.obtain();
+	                data.writeFloat(-clampedAzimuth);
+	                data.writeFloat(inclination - mInitInclination);
+	                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
+	                
+	                mFOV = reply.readInt();
+	                mZScale = reply.readFloat();
+	                mCamRot = reply.readFloat();
+	                mCamDis = reply.readFloat();
+	                reply.recycle();
+	                data.recycle();
+	            }
             }
         } catch (RemoteException ex) {
         }
