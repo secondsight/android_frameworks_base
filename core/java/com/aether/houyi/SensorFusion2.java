@@ -203,7 +203,8 @@ public class SensorFusion2 implements SensorEventListener {
     	if (!mOverrideTouchEvent) return;
     	
     	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
-		
+    	float width = mActivity.getWindow().getDecorView().getWidth();
+    	float height = mActivity.getWindow().getDecorView().getHeight();
 		int o = mScreenRotation;
 		
 		float azimuth = mAzimuth;
@@ -232,16 +233,16 @@ public class SensorFusion2 implements SensorEventListener {
         
         mCam.update();
         
+        float camDis = ev.getX() > width / 2 ? -mCamDis : mCamDis;
+        float camRot = ev.getX() > width / 2 ? mCamRot : -mCamRot;
         mDefZ = (float)(- 1 / Math.tan(mFOV/2 * Math.PI / 180));
         Matrix.setIdentityM(mTempMatrix, 0);
-        Matrix.translateM(mTempMatrix, 0, 0, 0, mDefZ);
-        Matrix.scaleM(mTempMatrix, 0, 0.8f, 0.4f, 1);
+        Matrix.translateM(mTempMatrix, 0, camDis, 0, mDefZ);
+        Matrix.rotateM(mTempMatrix, 0, camRot, 0, 1, 0);
+        Matrix.scaleM(mTempMatrix, 0, mZScale, mZScale/2, 1);
         
         float[] camMat = mCam.getViewMatrix();
         Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
-        
-    	float width = mActivity.getWindow().getDecorView().getWidth();
-    	float height = mActivity.getWindow().getDecorView().getHeight();
     	
         // get content view bound
     	float sx = ev.getX();
