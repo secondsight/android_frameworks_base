@@ -670,6 +670,9 @@ public class Activity extends ContextThemeWrapper
     private static final String SAVED_DIALOG_KEY_PREFIX = "android:dialog_";
     private static final String SAVED_DIALOG_ARGS_KEY_PREFIX = "android:dialog_args_";
 
+    private static final int TRANS_CODE_DISABLE_SBS = 2200;
+    private static final int TRANS_CODE_ENABLE_SBS = 2201;
+
     private static class ManagedDialog {
         Dialog mDialog;
         Bundle mArgs;
@@ -1407,8 +1410,23 @@ public class Activity extends ContextThemeWrapper
         if (mActionBar != null) mActionBar.setShowHideAnimationEnabled(false);
         getApplication().dispatchActivityStopped(this);
         mCalled = true;
+        setSBSEnable(true);
     }
 
+    public void setSBSEnable(boolean enabled) {
+        try {
+            IBinder flinger = ServiceManager.getService("SurfaceFlinger");
+            if (flinger != null) {                        
+                Parcel data = Parcel.obtain();
+                data.writeInterfaceToken("android.ui.ISurfaceComposer");
+                int code = enabled ? TRANS_CODE_ENABLE_SBS : TRANS_CODE_DISABLE_SBS;
+                flinger.transact(code, data, null, 0);                
+                data.recycle();
+            }
+        } catch (Exception e) {
+        }
+    }
+    
     /**
      * Perform any final cleanup before an activity is destroyed.  This can
      * happen either because the activity is finishing (someone called
