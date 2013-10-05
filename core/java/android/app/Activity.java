@@ -54,6 +54,7 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.os.UserHandle;
 import android.text.Selection;
@@ -706,6 +707,8 @@ public class Activity extends ContextThemeWrapper
     /*package*/ Configuration mCurrentConfig;
     private SearchManager mSearchManager;
     private MenuInflater mMenuInflater;
+	
+	private boolean mSBSEnabled = true;
 
     static final class NonConfigurationInstances {
         Object activity;
@@ -1133,6 +1136,7 @@ public class Activity extends ContextThemeWrapper
         if (win != null) win.makeActive();
         if (mActionBar != null) mActionBar.setShowHideAnimationEnabled(true);
         mCalled = true;
+        setSBSEnable(mSBSEnabled);
     }
 
     /**
@@ -1410,10 +1414,10 @@ public class Activity extends ContextThemeWrapper
         if (mActionBar != null) mActionBar.setShowHideAnimationEnabled(false);
         getApplication().dispatchActivityStopped(this);
         mCalled = true;
-        setSBSEnable(true);
     }
 
     public void setSBSEnable(boolean enabled) {
+        mSBSEnabled = enabled;
         try {
             IBinder flinger = ServiceManager.getService("SurfaceFlinger");
             if (flinger != null) {                        
