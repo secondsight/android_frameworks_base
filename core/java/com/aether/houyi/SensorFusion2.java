@@ -24,6 +24,24 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class SensorFusion2 implements SensorEventListener {
 
+    // interface begin
+    public float mAzimuth;
+    public float mInclination;
+    public HCamera mCam = new HCamera(new HVector(0, 0, 0), new HVector(0, 0, -1), 0);
+    public float mInitInclination;
+    public float mInitAzimuth;
+    public boolean mOverrideTouchEvent = true;
+    public float mFOV = 45;
+    public float mDefZ = -2.4142f;
+    public float mZScale = 0.8f;
+    public float mCamRot = 0f;
+    public float mCamDis = 0.13f;
+    // interface end
+    
+    // private
+    private static final int SENSOR_INIT_DELAY = 100;
+    private static final int SENSOR_WAITING_COUNT = 300;
+    
     private Activity mActivity;
     private SensorManager mSensorManager;
 
@@ -46,23 +64,23 @@ public class SensorFusion2 implements SensorEventListener {
     private float[] accMagOrientation = new float[3];
  
     // final orientation angles from sensor fusion
+    private float[] fusedOrientationFinal = new float[3];
     private float[] fusedOrientation = new float[3];
  
     // accelerometer and magnetometer based rotation matrix
     private float[] rotationMatrix = new float[9];
     
-    public static final float EPSILON = 0.000000001f;
+    private static final float EPSILON = 0.000000001f;
     private static final float NS2S = 1.0f / 1000000000.0f;
     private float timestamp;
     private boolean initState = true;
     
-    public static final int TIME_CONSTANT = 10;
-    public static final float FILTER_COEFFICIENT = 0.94f;
+    private static final int TIME_CONSTANT = 10;
+    private static final float FILTER_COEFFICIENT = 0.94f;
     private Timer fuseTimer = new Timer();
     private boolean mIsActive;
     
     private static final int CMD_UPDATE_SENSOR = 2000;
-    private static final int SENSOR_INIT_DELAY = 100;
 	
     private static final int INVALID_AZIMUTH = 1;
     private static final int IGNORING_AZIMUTH = 2;
@@ -96,19 +114,7 @@ public class SensorFusion2 implements SensorEventListener {
 
     private boolean mHasSensor;
     private boolean mHasGravity;
-    private HVector mCamLookAt = new HVector(0, 0, -1);
-    
-    public float mAzimuth;
-    public float mInclination;
-    public HCamera mCam = new HCamera(new HVector(0, 0, 0), mCamLookAt, 0);
-    public float mInitInclination;
-    public float mInitAzimuth;
-    public boolean mOverrideTouchEvent = true;
-    public float mFOV = 45;
-    public float mDefZ = -2.4142f;
-    public float mZScale = 0.8f;
-    public float mCamRot = 0f;
-    public float mCamDis = 0.13f;
+    private boolean mMirrable = true;
     
     private float mDefInclination = (float)(90.0 * Math.PI / 180);
     private int mInitInclinationState = STATE_INVALID;
@@ -118,6 +124,8 @@ public class SensorFusion2 implements SensorEventListener {
     private int mTick;
     private int mInitAzimuthState = STATE_INVALID;
     private float mAzimuthRange = (float)(30.0 * Math.PI / 180);
+    private float mLastA;
+    private float mLastI;
     
     private int mScreenRotation;
     private static SensorFusion2 mIns;
@@ -136,11 +144,11 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     public float getAzimuth() {
-        return fusedOrientation[0];
+        return fusedOrientationFinal[0];
     }
     
     public float getInclination() {
-        return -fusedOrientation[2];
+        return -fusedOrientationFinal[2];
     }    
     
     public void resetSenorInitialValues() {
@@ -198,9 +206,9 @@ public class SensorFusion2 implements SensorEventListener {
     }
 
     public void dispatchTouchEvent(MotionEvent ev) {
-    	// for testing app, set mOverrideTouchEvent false and override
-    	// dispatchTouchEvent in Activity
-    	if (!mOverrideTouchEvent) return;
+    	// for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
+        // if mirroring is turned off, no need to do anything
+    	if (!mOverrideTouchEvent || !mMirrable) return;
     	
     	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
     	float width = mActivity.getWindow().getDecorView().getWidth();
@@ -279,31 +287,32 @@ public class SensorFusion2 implements SensorEventListener {
     @Override
     public void onSensorChanged(SensorEvent event) {
         switch (event.sensor.getType()) {
-	        case Sensor.TYPE_GRAVITY:
-	    		System.arraycopy(event.values, 0, accel, 0, 3);
-	            calculateAccMagOrientation();
-	            mHasGravity = true;
-	            break;
-	    	
-	        case Sensor.TYPE_ACCELEROMETER:
-	        	if (!mHasGravity) {
-	                // copy new accelerometer data into accel array and calculate orientation
-	                System.arraycopy(event.values, 0, accel, 0, 3);
-	                calculateAccMagOrientation();
-	        	}
-	            break;
+        case Sensor.TYPE_GRAVITY:
+            System.arraycopy(event.values, 0, accel, 0, 3);
+            calculateAccMagOrientation();
+            mHasGravity = true;
+            break;
 
-            case Sensor.TYPE_GYROSCOPE:
-                // process gyro data
-                gyroFunction(event);
-                calculateFusedOrientation();
-                notifySensorChanged();
-                break;
+        case Sensor.TYPE_ACCELEROMETER:
+            if (!mHasGravity) {
+                // copy new accelerometer data into accel array and calculate
+                // orientation
+                System.arraycopy(event.values, 0, accel, 0, 3);
+                calculateAccMagOrientation();
+            }
+            break;
 
-            case Sensor.TYPE_MAGNETIC_FIELD:
-                // copy new magnetometer data into magnet array
-                System.arraycopy(event.values, 0, magnet, 0, 3);
-                break;
+        case Sensor.TYPE_GYROSCOPE:
+            // process gyro data
+            gyroFunction(event);
+            calculateFusedOrientation();
+            notifySensorChanged();
+            break;
+
+        case Sensor.TYPE_MAGNETIC_FIELD:
+            // copy new magnetometer data into magnet array
+            System.arraycopy(event.values, 0, magnet, 0, 3);
+            break;
         }
     }
 
@@ -507,6 +516,7 @@ public class SensorFusion2 implements SensorEventListener {
         // to comensate gyro drift
         gyroMatrix = getRotationMatrixFromOrientation(fusedOrientation);
         System.arraycopy(fusedOrientation, 0, gyroOrientation, 0, 3);
+        fusedOrientationFinal = lowPass(fusedOrientation.clone(), fusedOrientationFinal, 0.2f);
         
         setAzimuth(getAzimuth());
         setInclination(getInclination());
@@ -516,18 +526,36 @@ public class SensorFusion2 implements SensorEventListener {
     
     private void setInclination(float inclination) {
         if (mScreenRotation == Surface.ROTATION_270) {
-//            inclination = -inclination;
+            // inclination = -inclination;
         }
-        
+
         if (mInitInclinationState == STATE_INVALID) {
             if (mTick >= SENSOR_INIT_DELAY) {
                 mInitInclinationState = STATE_IGNORE;
+                mInitInclination = inclination;
+                mInclination = inclination;
             }
         } else if (mInitInclinationState == STATE_IGNORE) { // Average next 10?
-            mInitInclination = inclination;
-            mInitInclinationState = STATE_COLLECT;
+        	if (mTick > SENSOR_WAITING_COUNT) {
+        		mInitInclinationState = STATE_COLLECT;	
+        	} else {
+        		mLastI = mInclination;
+        		float del = inclination - mLastI;
+        		if (Math.abs(del) < 0.03 || (inclination==0&&mInitInclination==0)) {
+        			mInitInclination += del;
+        		} else {
+        			mInitInclinationState = STATE_COLLECT;
+        			mInitAzimuthState = STATE_COLLECT;
+        		}
+        		mInclination = inclination;
+        	}
         } else if (mInitInclinationState == STATE_COLLECT){
-            mInclination = inclination;
+        	mLastI = mInclination;
+    		float del = inclination - mLastI;
+    		if (Math.abs(del) < 0.001) {
+    			mInitInclination += del;
+    		}
+    		mInclination = inclination;
         }
         
 //        Log.d("Lance", "inc = " + inclination + " init inc = " + mInitInclination);
@@ -536,17 +564,35 @@ public class SensorFusion2 implements SensorEventListener {
     private void setAzimuth(float azimuth) {
     	if (mScreenRotation == Surface.ROTATION_90) {
     		azimuth = -azimuth;
-      }
+    	}
     	
-        if (mInitAzimuthState == STATE_INVALID) {
+    	if (mInitAzimuthState == STATE_INVALID) {
             if (mTick >= SENSOR_INIT_DELAY) {
                 mInitAzimuthState = STATE_IGNORE;
+                mInitAzimuth = azimuth;
+                mAzimuth = azimuth;
             }
         } else if (mInitAzimuthState == STATE_IGNORE) { // Average next 10?
-            mInitAzimuth = azimuth;
-            mInitAzimuthState = STATE_COLLECT;
+        	if (mTick > SENSOR_WAITING_COUNT) {
+        		mInitAzimuthState = STATE_COLLECT;	
+        	} else {
+        		mLastA = mAzimuth;
+        		float del = azimuth - mLastA;
+        		if (Math.abs(del) < 0.03 || (azimuth==0&&mInitAzimuth==0)) {
+        			mInitAzimuth += del;
+        		} else {
+        			mInitAzimuthState = STATE_COLLECT;
+        			mInitInclinationState = STATE_COLLECT;
+        		}
+        		mAzimuth = azimuth;
+        	}
         } else if (mInitAzimuthState == STATE_COLLECT){
-            mAzimuth = azimuth;
+        	mLastA = mAzimuth;
+    		float del = azimuth - mLastA;
+    		if (Math.abs(del) < 0.001) {
+    			mInitAzimuth += del;
+    		}
+    		mAzimuth = azimuth;
         }
         
 //        if (Math.abs(mInitAzimuth - azimuth) > Math.PI / 4) {
@@ -570,11 +616,6 @@ public class SensorFusion2 implements SensorEventListener {
         		return;
         	}
         	
-        	mCamLookAt.x = 0;
-            mCamLookAt.y = 0;
-            mCamLookAt.z = -1;
-            HVector lookat = mCamLookAt;
-            
     		float azimuth = mAzimuth;
             float delAzimuth = (float)(azimuth - mInitAzimuth);
             float min = (float)clampBetweenZeroAnd2PI(mInitAzimuth - mAzimuthRange);
@@ -649,6 +690,7 @@ public class SensorFusion2 implements SensorEventListener {
 	                data.writeFloat(inclination - mInitInclination);
 	                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
 	                
+	                mMirrable = reply.readInt() == 1 ? true : false;
 	                mFOV = reply.readInt();
 	                mZScale = reply.readFloat();
 	                mCamRot = reply.readFloat();
