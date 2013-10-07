@@ -208,7 +208,7 @@ public class SensorFusion2 implements SensorEventListener {
     public void dispatchTouchEvent(MotionEvent ev) {
     	// for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
         // if mirroring is turned off, no need to do anything
-    	if (!mOverrideTouchEvent || !mMirrable) return;
+    	if (!mOverrideTouchEvent || !mMirrable || !mActivity.isSBSEnabled()) return;
     	
     	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
     	float width = mActivity.getWindow().getDecorView().getWidth();

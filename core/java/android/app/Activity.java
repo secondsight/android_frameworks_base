@@ -1431,6 +1431,10 @@ public class Activity extends ContextThemeWrapper
         }
     }
     
+    public boolean isSBSEnabled() {
+        return mSBSEnabled;
+    }
+    
     /**
      * Perform any final cleanup before an activity is destroyed.  This can
      * happen either because the activity is finishing (someone called
