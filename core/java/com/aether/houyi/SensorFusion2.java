@@ -14,6 +14,7 @@ import android.os.ServiceManager;
 import android.os.Parcel;
 import android.os.RemoteException;
 import android.util.Log;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.Window;
@@ -39,6 +40,7 @@ public class SensorFusion2 implements SensorEventListener {
     // interface end
     
     // private
+    private static final String TAG = "SensorFusion";
     private static final int SENSOR_INIT_DELAY = 100;
     private static final int SENSOR_WAITING_COUNT = 300;
     
@@ -152,7 +154,7 @@ public class SensorFusion2 implements SensorEventListener {
     }    
     
     public void resetSenorInitialValues() {
-    	Log.i("Lance", "resetSensor");
+    	Log.i(TAG, "resetSensor");
     	mInitAzimuthState = STATE_INVALID;
         mInitInclinationState = STATE_INVALID;
         mTick = 0;
@@ -208,7 +210,11 @@ public class SensorFusion2 implements SensorEventListener {
     public void dispatchTouchEvent(MotionEvent ev) {
     	// for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
         // if mirroring is turned off, no need to do anything
-    	if (!mOverrideTouchEvent || !mMirrable || !mActivity.isSBSEnabled()) return;
+        // for mouse event, nothing to do
+    	if (!mOverrideTouchEvent || !mMirrable || !mActivity.isSBSEnabled()
+    	        || ev.getSource() == InputDevice.SOURCE_MOUSE) {
+    	    return;
+    	}
     	
     	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
     	float width = mActivity.getWindow().getDecorView().getWidth();
@@ -229,7 +235,7 @@ public class SensorFusion2 implements SensorEventListener {
         	delAzimuth = -delAzimuth;
         }
         
-        if (print) Log.d("LanceT", "i = " + (inclination - initInc) + " a = " + (azimuth - initAzimuth));
+        if (print) Log.d(TAG, "i = " + (inclination - initInc) + " a = " + (azimuth - initAzimuth));
         
     	Matrix.setIdentityM(mCamMat, 0);
     	Matrix.rotateM(mCamMat, 0, (float)(delInc * 180 / Math.PI), 1, 0, 0);
@@ -258,7 +264,7 @@ public class SensorFusion2 implements SensorEventListener {
         if (sx > width / 2) {
         	sx -= width / 2;
         }
-        if (print) Log.d("LanceT", "w = " + width + " h = " + height + " sx = " + sx + " sy = " + sy);
+        if (print) Log.d(TAG, "w = " + width + " h = " + height + " sx = " + sx + " sy = " + sy);
         
         // generate perspective projection matrix
         Util.glhPerspectivef(mProjectionMatrix, mFOV, 1, 0.1f, 1000);
@@ -266,20 +272,20 @@ public class SensorFusion2 implements SensorEventListener {
         float mirrorWidth = width / 2;
         float nx = 2 * sx / mirrorWidth - 1;
         float ny = 1 - 2 * sy / height;
-        if (print) Log.d("LanceT", "nx = " + nx + " ny = " + ny);
+        if (print) Log.d(TAG, "nx = " + nx + " ny = " + ny);
         
         Matrix.invertM(mProjectionMatrixInv, 0, mProjectionMatrix, 0);
         HVector eye = HMatrix.multiply(mProjectionMatrixInv, nx, ny, 0);
-        if (print) Log.i("LanceT", "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
+        if (print) Log.i(TAG, "eyex = " + eye.x + " eyey = " + eye.y + " eyez = " + eye.z);
         
         Matrix.invertM(mViewMatrixInv, 0, mViewMatrix, 0);
         HVector world = HMatrix.multiply(mViewMatrixInv, eye.x * mDefZ / (eye.z), eye.y * mDefZ / (eye.z), mDefZ);
         if (world != null) {
-	        if (print) Log.w("LanceT", "worldx = " + world.x + " worldy = " + world.y + " worldz = " + world.z);
+	        if (print) Log.w(TAG, "worldx = " + world.x + " worldy = " + world.y + " worldz = " + world.z);
 	        
 	        float outx = (0.5f + world.x/2) * width;
 	        float outy = (0.5f - world.y/2) * height;
-	        if (print) Log.e("LanceT", "screenx = " + outx + " screeny = " + outy);
+	        if (print) Log.e(TAG, "screenx = " + outx + " screeny = " + outy);
 	        ev.setLocation(outx, outy);
         }
     }
