@@ -117,6 +117,7 @@ public class SensorFusion2 implements SensorEventListener {
     private boolean mHasSensor;
     private boolean mHasGravity;
     private boolean mMirrable = true;
+    private boolean mIsSensorEnabled = true;
     
     private float mDefInclination = (float)(90.0 * Math.PI / 180);
     private int mInitInclinationState = STATE_INVALID;
@@ -233,6 +234,11 @@ public class SensorFusion2 implements SensorEventListener {
         }
         if (o == Surface.ROTATION_90) {
         	delAzimuth = -delAzimuth;
+        }
+        
+        if (!mIsSensorEnabled) {
+            delAzimuth = 0;
+            delInc = 0;
         }
         
         if (print) Log.d(TAG, "i = " + (inclination - initInc) + " a = " + (azimuth - initAzimuth));
@@ -697,6 +703,7 @@ public class SensorFusion2 implements SensorEventListener {
 	                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
 	                
 	                mMirrable = reply.readInt() == 1 ? true : false;
+	                mIsSensorEnabled = reply.readInt() == 1 ? true : false;
 	                mFOV = reply.readInt();
 	                mZScale = reply.readFloat();
 	                mCamRot = reply.readFloat();
