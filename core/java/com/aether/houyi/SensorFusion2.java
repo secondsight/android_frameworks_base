@@ -703,7 +703,11 @@ public class SensorFusion2 implements SensorEventListener {
 	                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
 	                
 	                mMirrable = reply.readInt() == 1 ? true : false;
-	                mIsSensorEnabled = reply.readInt() == 1 ? true : false;
+	                boolean sensorEnabled = reply.readInt() == 1 ? true : false;
+	                if (sensorEnabled != mIsSensorEnabled) {
+	                    resetSenorInitialValues();
+	                }
+	                mIsSensorEnabled = sensorEnabled;
 	                mFOV = reply.readInt();
 	                mZScale = reply.readFloat();
 	                mCamRot = reply.readFloat();
