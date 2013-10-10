@@ -19,11 +19,21 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.Window;
 
+import java.lang.ref.WeakReference;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.Timer;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class SensorFusion2 implements SensorEventListener {
+
+    public interface OnTrackDataChangedListener {
+        void onTrackDataChanged(float azimuth, float inclination);
+    }
+    
+    private Set<WeakReference<OnTrackDataChangedListener>> mListeners = new LinkedHashSet<WeakReference<OnTrackDataChangedListener>>();
 
     // interface begin
     public float mAzimuth;
@@ -83,7 +93,7 @@ public class SensorFusion2 implements SensorEventListener {
     private boolean mIsActive;
     
     private static final int CMD_UPDATE_SENSOR = 2000;
-	
+    
     private static final int INVALID_AZIMUTH = 1;
     private static final int IGNORING_AZIMUTH = 2;
     private static final int COLLECT_AZIMUTH = 3;
@@ -134,13 +144,13 @@ public class SensorFusion2 implements SensorEventListener {
     private static SensorFusion2 mIns;
     
     public static synchronized SensorFusion2 getInstance(Activity activity) {
-    	if (mIns == null) {
-    		mIns = new SensorFusion2();
-    	}
-    	
-    	mIns.mActivity = activity;
-    	mIns.mSensorManager = (SensorManager)activity.getSystemService(Context.SENSOR_SERVICE);
-    	return mIns;
+        if (mIns == null) {
+            mIns = new SensorFusion2();
+        }
+        
+        mIns.mActivity = activity;
+        mIns.mSensorManager = (SensorManager)activity.getSystemService(Context.SENSOR_SERVICE);
+        return mIns;
     }
     
     private SensorFusion2() {
@@ -156,7 +166,7 @@ public class SensorFusion2 implements SensorEventListener {
     
     public void resetSenorInitialValues() {
     	Log.i(TAG, "resetSensor");
-    	mInitAzimuthState = STATE_INVALID;
+        mInitAzimuthState = STATE_INVALID;
         mInitInclinationState = STATE_INVALID;
         mTick = 0;
         mDefOrientationFiltered = new float[3];
@@ -209,31 +219,31 @@ public class SensorFusion2 implements SensorEventListener {
     }
 
     public void dispatchTouchEvent(MotionEvent ev) {
-    	// for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
+        // for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
         // if mirroring is turned off, no need to do anything
         // for mouse event, nothing to do
     	if (!mOverrideTouchEvent || !mMirrable || !mActivity.isSBSEnabled()
     	        || ev.getSource() == InputDevice.SOURCE_MOUSE) {
     	    return;
     	}
-    	
-    	boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
-    	float width = mActivity.getWindow().getDecorView().getWidth();
-    	float height = mActivity.getWindow().getDecorView().getHeight();
-		int o = mScreenRotation;
-		
-		float azimuth = mAzimuth;
-		float initAzimuth = mInitAzimuth;
+        
+        boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
+        float width = mActivity.getWindow().getDecorView().getWidth();
+        float height = mActivity.getWindow().getDecorView().getHeight();
+        int o = mScreenRotation;
+        
+        float azimuth = mAzimuth;
+        float initAzimuth = mInitAzimuth;
         float delAzimuth = azimuth - initAzimuth;
 
         float initInc = mInitInclination;
         float inclination = mInclination;
         float delInc = inclination - initInc;
         if (o == Surface.ROTATION_270) {
-        	delInc = -delInc;
+            delInc = -delInc;
         }
         if (o == Surface.ROTATION_90) {
-        	delAzimuth = -delAzimuth;
+            delAzimuth = -delAzimuth;
         }
         
         if (!mIsSensorEnabled) {
@@ -243,8 +253,8 @@ public class SensorFusion2 implements SensorEventListener {
         
         if (print) Log.d(TAG, "i = " + (inclination - initInc) + " a = " + (azimuth - initAzimuth));
         
-    	Matrix.setIdentityM(mCamMat, 0);
-    	Matrix.rotateM(mCamMat, 0, (float)(delInc * 180 / Math.PI), 1, 0, 0);
+        Matrix.setIdentityM(mCamMat, 0);
+        Matrix.rotateM(mCamMat, 0, (float)(delInc * 180 / Math.PI), 1, 0, 0);
         Matrix.rotateM(mCamMat, 0, (float)(-delAzimuth * 180 / Math.PI), 0, 1, 0);
         Matrix.multiplyMV(mResLookat, 0, mCamMat, 0, mSrcLookat, 0);
         Matrix.multiplyMV(mResUp, 0, mCamMat, 0, mSrcUp, 0);
@@ -263,9 +273,9 @@ public class SensorFusion2 implements SensorEventListener {
         
         float[] camMat = mCam.getViewMatrix();
         Matrix.multiplyMM(mViewMatrix, 0, camMat, 0, mTempMatrix, 0);
-    	
+        
         // get content view bound
-    	float sx = ev.getX();
+        float sx = ev.getX();
     	float sy = ev.getY();
         if (sx > width / 2) {
         	sx -= width / 2;
@@ -396,8 +406,8 @@ public class SensorFusion2 implements SensorEventListener {
         float[] deltaVector = new float[4];
         if(timestamp != 0) {
             final float dT = (event.timestamp - timestamp) * NS2S;
-	        System.arraycopy(event.values, 0, gyro, 0, 3);
-	        getRotationVectorFromGyro(gyro, deltaVector, dT / 2.0f);
+            System.arraycopy(event.values, 0, gyro, 0, 3);
+            getRotationVectorFromGyro(gyro, deltaVector, dT / 2.0f);
         }
      
         // measurement done, save current time for next interval
@@ -468,12 +478,12 @@ public class SensorFusion2 implements SensorEventListener {
 
     class calculateFusedOrientationTask extends TimerTask {
         public void run() {
-        	calculateFusedOrientation();
+            calculateFusedOrientation();
         }
     }
     
     private void calculateFusedOrientation() {
-    	int o = mActivity.getWindowManager().getDefaultDisplay().getRotation();
+        int o = mActivity.getWindowManager().getDefaultDisplay().getRotation();
         setScreenRotation(o);
         
         float oneMinusCoeff = 1.0f - FILTER_COEFFICIENT;
@@ -548,63 +558,63 @@ public class SensorFusion2 implements SensorEventListener {
                 mInclination = inclination;
             }
         } else if (mInitInclinationState == STATE_IGNORE) { // Average next 10?
-        	if (mTick > SENSOR_WAITING_COUNT) {
-        		mInitInclinationState = STATE_COLLECT;	
-        	} else {
-        		mLastI = mInclination;
-        		float del = inclination - mLastI;
-        		if (Math.abs(del) < 0.03 || (inclination==0&&mInitInclination==0)) {
-        			mInitInclination += del;
-        		} else {
-        			mInitInclinationState = STATE_COLLECT;
-        			mInitAzimuthState = STATE_COLLECT;
-        		}
-        		mInclination = inclination;
-        	}
+            if (mTick > SENSOR_WAITING_COUNT) {
+                mInitInclinationState = STATE_COLLECT;    
+            } else {
+                mLastI = mInclination;
+                float del = inclination - mLastI;
+                if (Math.abs(del) < 0.03 || (inclination==0&&mInitInclination==0)) {
+                    mInitInclination += del;
+                } else {
+                    mInitInclinationState = STATE_COLLECT;
+                    mInitAzimuthState = STATE_COLLECT;
+                }
+                mInclination = inclination;
+            }
         } else if (mInitInclinationState == STATE_COLLECT){
-        	mLastI = mInclination;
-    		float del = inclination - mLastI;
-    		if (Math.abs(del) < 0.001) {
-    			mInitInclination += del;
-    		}
-    		mInclination = inclination;
+            mLastI = mInclination;
+            float del = inclination - mLastI;
+            if (Math.abs(del) < 0.001) {
+                mInitInclination += del;
+            }
+            mInclination = inclination;
         }
         
 //        Log.d("Lance", "inc = " + inclination + " init inc = " + mInitInclination);
     }
     
     private void setAzimuth(float azimuth) {
-    	if (mScreenRotation == Surface.ROTATION_90) {
-    		azimuth = -azimuth;
-    	}
-    	
-    	if (mInitAzimuthState == STATE_INVALID) {
+        if (mScreenRotation == Surface.ROTATION_90) {
+            azimuth = -azimuth;
+        }
+        
+        if (mInitAzimuthState == STATE_INVALID) {
             if (mTick >= SENSOR_INIT_DELAY) {
                 mInitAzimuthState = STATE_IGNORE;
                 mInitAzimuth = azimuth;
                 mAzimuth = azimuth;
             }
         } else if (mInitAzimuthState == STATE_IGNORE) { // Average next 10?
-        	if (mTick > SENSOR_WAITING_COUNT) {
-        		mInitAzimuthState = STATE_COLLECT;	
-        	} else {
-        		mLastA = mAzimuth;
-        		float del = azimuth - mLastA;
-        		if (Math.abs(del) < 0.03 || (azimuth==0&&mInitAzimuth==0)) {
-        			mInitAzimuth += del;
-        		} else {
-        			mInitAzimuthState = STATE_COLLECT;
-        			mInitInclinationState = STATE_COLLECT;
-        		}
-        		mAzimuth = azimuth;
-        	}
+            if (mTick > SENSOR_WAITING_COUNT) {
+                mInitAzimuthState = STATE_COLLECT;    
+            } else {
+                mLastA = mAzimuth;
+                float del = azimuth - mLastA;
+                if (Math.abs(del) < 0.03 || (azimuth==0&&mInitAzimuth==0)) {
+                    mInitAzimuth += del;
+                } else {
+                    mInitAzimuthState = STATE_COLLECT;
+                    mInitInclinationState = STATE_COLLECT;
+                }
+                mAzimuth = azimuth;
+            }
         } else if (mInitAzimuthState == STATE_COLLECT){
-        	mLastA = mAzimuth;
-    		float del = azimuth - mLastA;
-    		if (Math.abs(del) < 0.001) {
-    			mInitAzimuth += del;
-    		}
-    		mAzimuth = azimuth;
+            mLastA = mAzimuth;
+            float del = azimuth - mLastA;
+            if (Math.abs(del) < 0.001) {
+                mInitAzimuth += del;
+            }
+            mAzimuth = azimuth;
         }
         
 //        if (Math.abs(mInitAzimuth - azimuth) > Math.PI / 4) {
@@ -613,63 +623,63 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     private float clampInclination(float input, float range) {
-    	float res = input - mDefInclination;
-    	if (res > range) {
-    		res = range;
-    	} else if (res < -range) {
-    		res = -range;
-    	}
-    	return res;
+        float res = input - mDefInclination;
+        if (res > range) {
+            res = range;
+        } else if (res < -range) {
+            res = -range;
+        }
+        return res;
     }
     
     private void notifySensorChanged() {
         try {
-        	if (mTick < SENSOR_INIT_DELAY) {
-        		return;
-        	}
-        	
-    		float azimuth = mAzimuth;
+            if (mTick < SENSOR_INIT_DELAY) {
+                return;
+            }
+            
+            float azimuth = mAzimuth;
             float delAzimuth = (float)(azimuth - mInitAzimuth);
             float min = (float)clampBetweenZeroAnd2PI(mInitAzimuth - mAzimuthRange);
             float max = (float)clampBetweenZeroAnd2PI(mInitAzimuth + mAzimuthRange);
             float clampedAzimuth = delAzimuth;
             
 //            if (max > min) { // Normal case
-//            	float absAngleMin = (float)getSmallerAngle(azimuth, min);
-//            	float absAngleMax = (float)getSmallerAngle(azimuth, max);
-//            	float minRefAzimuth = (float)((azimuth > max && absAngleMin < absAngleMax) ? azimuth - PI2 : azimuth);
-//            	float maxRefAzimuth = (float)((azimuth < min && absAngleMax < absAngleMin) ? azimuth + PI2 : azimuth);
-//            	if (minRefAzimuth < min && absAngleMin < absAngleMax) {
-//            		mInitAzimuth -= absAngleMin; 
-////            		Log.d(TAG, "A " + mInitAzimuth + "; min/max = " + min + ", " + max);
-//            	} else if (maxRefAzimuth > max && absAngleMax < absAngleMin) {
-//            		mInitAzimuth += absAngleMax; 
-////            		Log.d(TAG, "B " + mInitAzimuth + "; min/max = " + min + ", " + max);
-//            	}
+//                float absAngleMin = (float)getSmallerAngle(azimuth, min);
+//                float absAngleMax = (float)getSmallerAngle(azimuth, max);
+//                float minRefAzimuth = (float)((azimuth > max && absAngleMin < absAngleMax) ? azimuth - PI2 : azimuth);
+//                float maxRefAzimuth = (float)((azimuth < min && absAngleMax < absAngleMin) ? azimuth + PI2 : azimuth);
+//                if (minRefAzimuth < min && absAngleMin < absAngleMax) {
+//                    mInitAzimuth -= absAngleMin; 
+////                    Log.d(TAG, "A " + mInitAzimuth + "; min/max = " + min + ", " + max);
+//                } else if (maxRefAzimuth > max && absAngleMax < absAngleMin) {
+//                    mInitAzimuth += absAngleMax; 
+////                    Log.d(TAG, "B " + mInitAzimuth + "; min/max = " + min + ", " + max);
+//                }
 //            } else if (azimuth > max && azimuth < min){
-//            	if (azimuth > max && azimuth - max < min - azimuth) {
-//            		mInitAzimuth += azimuth - max; 
-////            		Log.d(TAG, "C " + mInitAzimuth + "; min/max = " + min + ", " + max);
-//            	} else if (azimuth < min && azimuth - max > min - azimuth) {
-//            		mInitAzimuth -= min - azimuth; 
-////            		Log.d(TAG, "D " + mInitAzimuth + "; min/max = " + min + ", " + max);
-//            	} else {
-////            		Log.d(TAG, "E " + mInitAzimuth + "; min/max = " + min + ", " + max);
-//            	}
+//                if (azimuth > max && azimuth - max < min - azimuth) {
+//                    mInitAzimuth += azimuth - max; 
+////                    Log.d(TAG, "C " + mInitAzimuth + "; min/max = " + min + ", " + max);
+//                } else if (azimuth < min && azimuth - max > min - azimuth) {
+//                    mInitAzimuth -= min - azimuth; 
+////                    Log.d(TAG, "D " + mInitAzimuth + "; min/max = " + min + ", " + max);
+//                } else {
+////                    Log.d(TAG, "E " + mInitAzimuth + "; min/max = " + min + ", " + max);
+//                }
 //            }
             
             // re-center azimuth
             double delta = getSmallerAngle(azimuth, mInitAzimuth);
             if (Math.abs(delta) < 0.01f) {
-//            	mInitAzimuth = azimuth;
+//                mInitAzimuth = azimuth;
             } else {
-            	double step = delta / 40;
-            	double attemp = Math.abs(getSmallerAngle(azimuth, clampBetweenZeroAnd2PI(mInitAzimuth + step)));
-//            	if (attemp < delta) {
-//        			mInitAzimuth += step;
-//            	} else {
+                double step = delta / 40;
+                double attemp = Math.abs(getSmallerAngle(azimuth, clampBetweenZeroAnd2PI(mInitAzimuth + step)));
+//                if (attemp < delta) {
+//                    mInitAzimuth += step;
+//                } else {
 //                    mInitAzimuth -= step;
-//            	}
+//                }
             }
 //            mInitAzimuth = (float)clampBetweenZeroAnd2PI(mInitAzimuth);
             
@@ -693,57 +703,81 @@ public class SensorFusion2 implements SensorEventListener {
 //            Log.d("Lance", "ii = " + mInitInclination + " i = " + inclination);
             
             if (mInitAzimuthState != STATE_INVALID && mInitInclinationState != STATE_INVALID) {
-	            // magic communication with surface flinger.
-	            IBinder flinger = ServiceManager.getService("SurfaceFlinger");
-	            if (flinger != null) {
-	                Parcel data = Parcel.obtain();
-	                Parcel reply = Parcel.obtain();
-	                data.writeFloat(-clampedAzimuth);
-	                data.writeFloat(inclination - mInitInclination);
-	                flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
-	                
-	                mMirrable = reply.readInt() == 1 ? true : false;
+                // magic communication with surface flinger.
+                IBinder flinger = ServiceManager.getService("SurfaceFlinger");
+                if (flinger != null) {
+                    Parcel data = Parcel.obtain();
+                    Parcel reply = Parcel.obtain();
+                    data.writeFloat(-clampedAzimuth);
+                    data.writeFloat(inclination - mInitInclination);
+                    flinger.transact(CMD_UPDATE_SENSOR, data, reply, 0);
+                    
+                    mMirrable = reply.readInt() == 1 ? true : false;
 	                boolean sensorEnabled = reply.readInt() == 1 ? true : false;
 	                if (sensorEnabled != mIsSensorEnabled) {
 	                    resetSenorInitialValues();
 	                }
 	                mIsSensorEnabled = sensorEnabled;
-	                mFOV = reply.readInt();
-	                mZScale = reply.readFloat();
-	                mCamRot = reply.readFloat();
-	                mCamDis = reply.readFloat();
-	                reply.recycle();
-	                data.recycle();
-	            }
+                    mFOV = reply.readInt();
+                    mZScale = reply.readFloat();
+                    mCamRot = reply.readFloat();
+                    mCamDis = reply.readFloat();
+                    reply.recycle();
+                    data.recycle();
+                }
+                notifyTrackDataChanged(-clampedAzimuth, inclination - mInitInclination);
             }
         } catch (RemoteException ex) {
+        }
+    }
+    
+    private void notifyTrackDataChanged(float azimuth, float inclination) {
+        synchronized(mListeners) {
+            for (WeakReference<OnTrackDataChangedListener> ref : mListeners) {
+                OnTrackDataChangedListener listener = ref.get();
+                if (listener != null) {
+                    listener.onTrackDataChanged(azimuth, inclination);
+                }
+            }
+        }        
+    }
+    
+    public void registerOnTrackDataChangedListener(OnTrackDataChangedListener listener) {
+        synchronized(mListeners) {
+            mListeners.add(new WeakReference<OnTrackDataChangedListener>(listener));
+        }
+    }
+    
+    public void unregisterOnTrackDataChangedListener(OnTrackDataChangedListener listener) {
+        synchronized(mListeners) {
+            mListeners.remove(listener);
         }
     }
     
     // util
     private static double PI2 = Math.PI * 2;
     private static double clampBetweenZeroAnd2PI(double angle) {
-		double res = angle;
-		
-		while (res < 0) {
-			res += PI2;
-		} 
-		while (res > PI2) {
-			res -= PI2;
-		}
-		return res;
-	}
-	
-	// return angle between 0~PI
+        double res = angle;
+        
+        while (res < 0) {
+            res += PI2;
+        } 
+        while (res > PI2) {
+            res -= PI2;
+        }
+        return res;
+    }
+    
+    // return angle between 0~PI
     private static double getSmallerAngle(double a1, double a2) {
-		double ca1 = clampBetweenZeroAnd2PI(a1);
-		double ca2 = clampBetweenZeroAnd2PI(a2);
-		double angle = Math.abs(ca1 - ca2);
-		if (angle > Math.PI) {
-			angle = PI2 - angle;
-		}
-		return angle;
-	}
+        double ca1 = clampBetweenZeroAnd2PI(a1);
+        double ca2 = clampBetweenZeroAnd2PI(a2);
+        double angle = Math.abs(ca1 - ca2);
+        if (angle > Math.PI) {
+            angle = PI2 - angle;
+        }
+        return angle;
+    }
     
     private float[] lowPass( float[] input, float[] output, float deltaWeigh) {
         if ( output == null ) return input;     

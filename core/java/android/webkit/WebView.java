@@ -17,6 +17,7 @@
 package android.webkit;
 
 import android.annotation.Widget;
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -28,6 +29,7 @@ import android.graphics.drawable.Drawable;
 import android.net.http.SslCertificate;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.StrictMode;
@@ -44,6 +46,9 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.AbsoluteLayout;
+
+import com.aether.houyi.SensorFusion2;
+import com.aether.houyi.SensorFusion2.OnTrackDataChangedListener;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -237,7 +242,7 @@ import java.util.Map;
 // only delegated where a specific need exists for them to do so.
 @Widget
 public class WebView extends AbsoluteLayout
-        implements ViewTreeObserver.OnGlobalFocusChangeListener,
+        implements ViewTreeObserver.OnGlobalFocusChangeListener, OnTrackDataChangedListener,
         ViewGroup.OnHierarchyChangeListener, ViewDebug.HierarchyHandler {
 
     private static final String LOGTAG = "webview_proxy";
@@ -245,7 +250,13 @@ public class WebView extends AbsoluteLayout
     // Throwing an exception for incorrect thread usage if the
     // build target is JB MR2 or newer. Defaults to false, and is
     // set in the WebView constructor.
-    private static Boolean sEnforceThreadChecking = false;
+    private static Boolean sEnforceThreadChecking = false;	
+	
+    public static final String SBS_INTERFACE_NAME = "SBS";
+    private static final float SBS_TRACK_DATA_ACCURACY = 100000f;
+    private SensorFusion2 mSensor = null;
+    private String mSbsJSCallback = null;    
+    private final SBSObject mSbsObject = new SBSObject();
 
     /**
      *  Transportation object for returning WebView across thread boundaries.
@@ -494,7 +505,11 @@ public class WebView extends AbsoluteLayout
         checkThread();
 
         ensureProviderCreated();
-        mProvider.init(javaScriptInterfaces, privateBrowsing);
+        mProvider.init(javaScriptInterfaces, privateBrowsing);		
+		
+        if (context instanceof Activity) {
+            mSensor = SensorFusion2.getInstance((Activity)context);
+        }
     }
 
     /**
@@ -2192,4 +2207,68 @@ public class WebView extends AbsoluteLayout
         mProvider.getViewDelegate().preDispatchDraw(canvas);
         super.dispatchDraw(canvas);
     }
+	
+// ==============   SBS Start  =================
+
+
+    public void setSbsInterfaceEnabled(boolean enabled) {
+        if (mSensor == null) {
+            return;
+        }
+        
+        if (enabled) {
+        	getSettings().setJavaScriptEnabled(true);
+            addJavascriptInterface(mSbsObject, SBS_INTERFACE_NAME);
+        } else {
+            removeJavascriptInterface(SBS_INTERFACE_NAME);
+        }
+    }
+    
+    public void setSbsJSCallback(final String method) {
+        if (mSensor == null) {
+            return;
+        }
+        
+        mSbsJSCallback = method;
+        if (method != null) {
+        	getSettings().setJavaScriptEnabled(true);
+            mSensor.registerOnTrackDataChangedListener(this);
+        } else {
+            mSensor.unregisterOnTrackDataChangedListener(this);
+        }
+    }
+
+    @Override
+    public void onTrackDataChanged(float azimuth, float inclination) {   
+        mTrackDataHandler.removeMessages(1);
+        mTrackDataHandler.dispatchMessage(mTrackDataHandler.obtainMessage(1, 
+                (int)(azimuth * SBS_TRACK_DATA_ACCURACY), 
+                (int)(inclination * SBS_TRACK_DATA_ACCURACY)));
+    }
+    
+    private Handler mTrackDataHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            float azimuth = msg.arg1 / SBS_TRACK_DATA_ACCURACY;
+            float inclination = msg.arg2 / SBS_TRACK_DATA_ACCURACY;
+            String js = String.format("javascript:%s(%f, %f);", mSbsJSCallback, azimuth, inclination);
+            loadUrl(js); 
+        }        
+    };    
+
+    public class SBSObject  {
+        @JavascriptInterface
+        public float getAzimuth() {
+            return mSensor != null ? mSensor.mAzimuth : 0;
+        }
+
+        @JavascriptInterface
+        public float getInclination() {
+            return mSensor != null ? mSensor.mInclination : 0;
+        }    
+    }
+	
+// ==============    SBS End   =================
+	
+	
 }
