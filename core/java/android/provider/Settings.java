@@ -18,7 +18,6 @@ package android.provider;
 
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
-import android.app.ActivityManagerNative;
 import android.app.SearchManager;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
@@ -38,7 +37,6 @@ import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
-import android.os.Binder;
 import android.os.Bundle;
 import android.os.DropBoxManager;
 import android.os.IBinder;
@@ -3019,10 +3017,13 @@ public final class Settings {
         public static final String LOCKSCREEN_LONG_MENU_ACTION = "lockscreen_long_menu_action";
 
          /**
-          * Always show the battery status on the lockscreen
+          * Lockscreen battery status visibility mode
+          * 0 = show if charging
+          * 1 = always show
+          * 2 = never show
           * @hide
           */
-        public static final String LOCKSCREEN_ALWAYS_SHOW_BATTERY = "lockscreen_always_show_battery";
+        public static final String LOCKSCREEN_BATTERY_VISIBILITY = "lockscreen_always_show_battery";
 
         /**
          * Show the pending notification counts as overlays on the status bar
@@ -3155,6 +3156,7 @@ public final class Settings {
           * 3 - Search
           * 4 - Voice search
           * 5 - In-app search
+          * 6 - Launch Camera
           * @hide
           */
          public static final String KEY_HOME_LONG_PRESS_ACTION = "key_home_long_press_action";
@@ -3223,6 +3225,21 @@ public final class Settings {
           * @hide
           */
          public static final String KEY_APP_SWITCH_LONG_PRESS_ACTION = "key_app_switch_long_press_action";
+
+         /**
+          * Action to perform when the Camera key is pressed. (Default is 0)
+          * (See KEY_HOME_LONG_PRESS_ACTION for valid values)
+          * @hide
+          */
+         public static final String KEY_CAMERA_ACTION = "key_camera_action";
+
+         /**
+          * Action to perform when the Camera key is long-pressed. (Default is 6)
+          * (See KEY_HOME_LONG_PRESS_ACTION for valid values)
+          * @hide
+          */
+         public static final String KEY_CAMERA_LONG_PRESS_ACTION = "key_camera_long_press_action";
+
 
         /**
          * Control the display of the action overflow button within app UI.
@@ -3364,7 +3381,7 @@ public final class Settings {
             POWER_MENU_SOUND_ENABLED,
             POWER_MENU_USER_ENABLED,
             LOCKSCREEN_VIBRATE_ENABLED,
-            LOCKSCREEN_ALWAYS_SHOW_BATTERY,
+            LOCKSCREEN_BATTERY_VISIBILITY,
             PHONE_BLACKLIST_ENABLED,
             PHONE_BLACKLIST_NOTIFY_ENABLED,
             PHONE_BLACKLIST_PRIVATE_NUMBER_MODE,
@@ -5194,7 +5211,7 @@ public final class Settings {
          * Whether newly installed apps should run with privacy guard by default
          * @hide
          */
-        public static final String PRIVACY_GUARD_DEFAULT = "privacy_guard_default";
+         public static final String PRIVACY_GUARD_DEFAULT = "privacy_guard_default";
 
         /**
          * This are the settings to be backed up.
@@ -5266,13 +5283,6 @@ public final class Settings {
          * @hide
          */
         public static final boolean isLocationProviderEnabledForUser(ContentResolver cr, String provider, int userId) {
-            try {
-                if (ActivityManagerNative.getDefault().isPrivacyGuardEnabledForProcess(Binder.getCallingPid())) {
-                    return false;
-                }
-            } catch (RemoteException e) {
-                // ignore
-            }
             String allowedProviders = Settings.Secure.getStringForUser(cr,
                     LOCATION_PROVIDERS_ALLOWED, userId);
             return TextUtils.delimitedStringContains(allowedProviders, ',', provider);
