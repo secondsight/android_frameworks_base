@@ -26,6 +26,7 @@ import android.graphics.Paint;
 import android.graphics.Picture;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.net.http.SslCertificate;
 import android.os.Build;
 import android.os.Bundle;
@@ -250,12 +251,13 @@ public class WebView extends AbsoluteLayout
     // Throwing an exception for incorrect thread usage if the
     // build target is JB MR2 or newer. Defaults to false, and is
     // set in the WebView constructor.
-    private static Boolean sEnforceThreadChecking = false;	
-	
+    private static Boolean sEnforceThreadChecking = false;    
+    
     public static final String SBS_INTERFACE_NAME = "SBS";
     private static final float SBS_TRACK_DATA_ACCURACY = 100000f;
     private SensorFusion2 mSensor = null;
     private String mSbsJSCallback = null;    
+    private String mSBSChangedDomain = null;    
     private final SBSObject mSbsObject = new SBSObject();
 
     /**
@@ -505,8 +507,8 @@ public class WebView extends AbsoluteLayout
         checkThread();
 
         ensureProviderCreated();
-        mProvider.init(javaScriptInterfaces, privateBrowsing);		
-		
+        mProvider.init(javaScriptInterfaces, privateBrowsing);        
+        
         if (context instanceof Activity) {
             mSensor = SensorFusion2.getInstance((Activity)context);
         }
@@ -776,6 +778,7 @@ public class WebView extends AbsoluteLayout
     public void loadUrl(String url, Map<String, String> additionalHttpHeaders) {
         checkThread();
         mProvider.loadUrl(url, additionalHttpHeaders);
+        restoreSBSEnable(url);
     }
 
     /**
@@ -786,6 +789,7 @@ public class WebView extends AbsoluteLayout
     public void loadUrl(String url) {
         checkThread();
         mProvider.loadUrl(url);
+        restoreSBSEnable(url);
     }
 
     /**
@@ -833,6 +837,7 @@ public class WebView extends AbsoluteLayout
     public void loadData(String data, String mimeType, String encoding) {
         checkThread();
         mProvider.loadData(data, mimeType, encoding);
+        restoreSBSEnable(getUrl());
     }
 
     /**
@@ -862,6 +867,7 @@ public class WebView extends AbsoluteLayout
             String mimeType, String encoding, String historyUrl) {
         checkThread();
         mProvider.loadDataWithBaseURL(baseUrl, data, mimeType, encoding, historyUrl);
+        restoreSBSEnable(baseUrl);
     }
 
     /**
@@ -2207,7 +2213,7 @@ public class WebView extends AbsoluteLayout
         mProvider.getViewDelegate().preDispatchDraw(canvas);
         super.dispatchDraw(canvas);
     }
-	
+    
 // ==============   SBS Start  =================
 
 
@@ -2217,7 +2223,7 @@ public class WebView extends AbsoluteLayout
         }
         
         if (enabled) {
-        	getSettings().setJavaScriptEnabled(true);
+            getSettings().setJavaScriptEnabled(true);
             addJavascriptInterface(mSbsObject, SBS_INTERFACE_NAME);
         } else {
             removeJavascriptInterface(SBS_INTERFACE_NAME);
@@ -2231,7 +2237,7 @@ public class WebView extends AbsoluteLayout
         
         mSbsJSCallback = method;
         if (method != null) {
-        	getSettings().setJavaScriptEnabled(true);
+            getSettings().setJavaScriptEnabled(true);
             mSensor.registerOnTrackDataChangedListener(this);
         } else {
             mSensor.unregisterOnTrackDataChangedListener(this);
@@ -2254,9 +2260,46 @@ public class WebView extends AbsoluteLayout
             String js = String.format("javascript:%s(%f, %f);", mSbsJSCallback, azimuth, inclination);
             loadUrl(js); 
         }        
-    };    
+    }; 
 
-    public class SBSObject  {
+    private void setSBSEnable(final boolean enabled) {   
+        if (mContext instanceof Activity) {  
+			final Activity activity = (Activity)mContext;
+			activity.runOnUiThread(new Runnable() {
+				@Override
+				public void run() {		
+					try {
+						Uri uri = Uri.parse(getUrl());
+						mSBSChangedDomain = uri.getAuthority().toLowerCase();            
+					} catch(Exception e) {
+						mSBSChangedDomain = null;
+					}        
+					activity.setSBSEnable(enabled);
+					Log.d(LOGTAG, "change sbs enabled in domain " + mSBSChangedDomain + " : " + enabled);
+				}    		
+			});
+		}
+    }
+	
+    private void restoreSBSEnable(String url) {        
+        if (mContext instanceof Activity) {    
+            String newDomain = null;
+            try {
+				Uri uri = Uri.parse(url);					
+				if (uri.isHierarchical()) {
+					newDomain = uri.getAuthority().toLowerCase();
+				} else {
+					return;
+				}
+            } catch(Exception e) {
+            }
+            if (newDomain == null || mSBSChangedDomain == null || !newDomain.equals(mSBSChangedDomain)) {
+                ((Activity)mContext).setSBSEnable(true);
+            }
+        }
+    }
+    
+    private class SBSObject  {
         @JavascriptInterface
         public float getAzimuth() {
             return mSensor != null ? mSensor.mAzimuth : 0;
@@ -2265,10 +2308,20 @@ public class WebView extends AbsoluteLayout
         @JavascriptInterface
         public float getInclination() {
             return mSensor != null ? mSensor.mInclination : 0;
+        } 
+		
+        @JavascriptInterface
+        public void enableSBS() {        
+            setSBSEnable(true);
+        }       
+
+        @JavascriptInterface
+        public void disableSBS() {        
+            setSBSEnable(false);
         }    
     }
-	
+    
 // ==============    SBS End   =================
-	
-	
+    
+    
 }
