@@ -48,8 +48,8 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.AbsoluteLayout;
 
-import com.aether.houyi.SensorFusion2;
-import com.aether.houyi.SensorFusion2.OnTrackDataChangedListener;
+import com.aether.houyi.SensorFusionManager;
+import com.aether.houyi.ISensorFusionCallback;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -243,7 +243,7 @@ import java.util.Map;
 // only delegated where a specific need exists for them to do so.
 @Widget
 public class WebView extends AbsoluteLayout
-        implements ViewTreeObserver.OnGlobalFocusChangeListener, OnTrackDataChangedListener,
+        implements ViewTreeObserver.OnGlobalFocusChangeListener,
         ViewGroup.OnHierarchyChangeListener, ViewDebug.HierarchyHandler {
 
     private static final String LOGTAG = "webview_proxy";
@@ -255,7 +255,7 @@ public class WebView extends AbsoluteLayout
     
     public static final String SBS_INTERFACE_NAME = "SBS";
     private static final float SBS_TRACK_DATA_ACCURACY = 100000f;
-    private SensorFusion2 mSensor = null;
+    private SensorFusionManager mSensor = null;
     private String mSbsJSCallback = null;    
     private String mSBSChangedDomain = null;    
     private final SBSObject mSbsObject = new SBSObject();
@@ -509,9 +509,7 @@ public class WebView extends AbsoluteLayout
         ensureProviderCreated();
         mProvider.init(javaScriptInterfaces, privateBrowsing);        
         
-        if (context instanceof Activity) {
-            mSensor = SensorFusion2.getInstance((Activity)context);
-        }
+        mSensor = SensorFusionManager.get(context);
     }
 
     /**
@@ -1962,10 +1960,14 @@ public class WebView extends AbsoluteLayout
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         mProvider.getViewDelegate().onAttachedToWindow();
+        if (mSbsJSCallback != null) {
+			mSensor.registerCallback(mSensorFusionCallback);
+		}
     }
 
     @Override
-    protected void onDetachedFromWindow() {
+    protected void onDetachedFromWindow() {	
+		mSensor.unregisterCallback(mSensorFusionCallback);
         mProvider.getViewDelegate().onDetachedFromWindow();
         super.onDetachedFromWindow();
     }
@@ -2238,18 +2240,10 @@ public class WebView extends AbsoluteLayout
         mSbsJSCallback = method;
         if (method != null) {
             getSettings().setJavaScriptEnabled(true);
-            mSensor.registerOnTrackDataChangedListener(this);
+			mSensor.registerCallback(mSensorFusionCallback);
         } else {
-            mSensor.unregisterOnTrackDataChangedListener(this);
+			mSensor.unregisterCallback(mSensorFusionCallback);
         }
-    }
-
-    @Override
-    public void onTrackDataChanged(float azimuth, float inclination) {   
-        mTrackDataHandler.removeMessages(1);
-        mTrackDataHandler.dispatchMessage(mTrackDataHandler.obtainMessage(1, 
-                (int)(azimuth * SBS_TRACK_DATA_ACCURACY), 
-                (int)(inclination * SBS_TRACK_DATA_ACCURACY)));
     }
     
     private Handler mTrackDataHandler = new Handler() {
@@ -2298,16 +2292,28 @@ public class WebView extends AbsoluteLayout
             }
         }
     }
+	
+	private ISensorFusionCallback mSensorFusionCallback = new ISensorFusionCallback.Stub() {
+
+		@Override
+		public void onTrackDataChanged(float azimuth, float inclination) {   
+			mTrackDataHandler.removeMessages(1);
+			mTrackDataHandler.dispatchMessage(mTrackDataHandler.obtainMessage(1, 
+					(int)(azimuth * SBS_TRACK_DATA_ACCURACY), 
+					(int)(inclination * SBS_TRACK_DATA_ACCURACY)));
+		}
+    	
+	};
     
     private class SBSObject  {
         @JavascriptInterface
         public float getAzimuth() {
-            return mSensor != null ? mSensor.mAzimuth : 0;
+            return mSensor != null ? mSensor.getAzimuth() : 0;
         }
 
         @JavascriptInterface
         public float getInclination() {
-            return mSensor != null ? mSensor.mInclination : 0;
+            return mSensor != null ? mSensor.getInclination() : 0;
         } 
 		
         @JavascriptInterface

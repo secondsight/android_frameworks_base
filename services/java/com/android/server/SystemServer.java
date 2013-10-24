@@ -49,6 +49,7 @@ import android.util.Log;
 import android.util.Slog;
 import android.view.WindowManager;
 
+import com.aether.houyi.SensorFusionService;
 import com.android.internal.os.BinderInternal;
 import com.android.internal.os.SamplingProfilerIntegration;
 import com.android.server.accessibility.AccessibilityManagerService;
@@ -145,6 +146,7 @@ class ServerThread extends Thread {
 
         Installer installer = null;
         AccountManagerService accountManager = null;
+        SensorFusionService sensorFusion = null;
         ContentService contentService = null;
         LightsService lights = null;
         PowerManagerService power = null;
@@ -578,6 +580,13 @@ class ServerThread extends Thread {
             } catch (Throwable e) {
                 reportWtf("starting UpdateLockService", e);
             }
+            try {
+                Slog.i(TAG, "Sensor Fusion Service");
+				sensorFusion = new SensorFusionService(context);
+                ServiceManager.addService(Context.SENSOR_FUSION_SERVICE, sensorFusion);
+            } catch (Throwable e) {
+                reportWtf("starting SensorFusionService", e);
+            }
 
             /*
              * MountService has a few dependencies: Notification Manager and
@@ -987,6 +996,7 @@ class ServerThread extends Thread {
         final DreamManagerService dreamyF = dreamy;
         final InputManagerService inputManagerF = inputManager;
         final TelephonyRegistry telephonyRegistryF = telephonyRegistry;
+        final SensorFusionService sensorFusionF = sensorFusion;
 
         // We now tell the activity manager it is okay to run third party
         // code.  It will call back into us once it has gotten to the state
@@ -1124,6 +1134,13 @@ class ServerThread extends Thread {
                 } catch (Throwable e) {
                     reportWtf("making TelephonyRegistry ready", e);
                 }
+
+				try {
+					if (sensorFusionF != null)
+						sensorFusionF.systemReady();
+				} catch (Throwable e) {
+					reportWtf("making Sensor Fusion Service ready", e);
+				}				
             }
         });
 

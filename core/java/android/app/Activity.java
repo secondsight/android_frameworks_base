@@ -18,7 +18,7 @@ package android.app;
 
 import com.android.internal.app.ActionBarImpl;
 import com.android.internal.policy.PolicyManager;
-import com.aether.houyi.SensorFusion2;
+import com.aether.houyi.SensorFusionManager;
 
 import android.content.ComponentCallbacks2;
 import android.content.ComponentName;
@@ -913,7 +913,7 @@ public class Activity extends ContextThemeWrapper
         mCalled = true;
         
         // Sensor Fusion start
-        mSensorFusion = SensorFusion2.getInstance(this);
+        mSensorFusion = SensorFusionManager.get(this);
         // Sensor Fusion end
     }
 
@@ -1111,11 +1111,11 @@ public class Activity extends ContextThemeWrapper
         mCalled = true;
         
         // Sensor Fusion start
-        if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        /*if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
         	mSensorFusion.start();
         } else {
         	mSensorFusion.stop();
-        }
+        }*/
         // Sensor Fusion end
     }
 
@@ -1310,7 +1310,7 @@ public class Activity extends ContextThemeWrapper
         mCalled = true;
         
         // Sensor Fusion start
-        mSensorFusion.stop();
+        //mSensorFusion.stop();
         // Sensor Fusion end
     }
 
@@ -1533,11 +1533,11 @@ public class Activity extends ContextThemeWrapper
         }
         
         // Sensor Fusion start
-        if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        /*if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
         	mSensorFusion.start();
         } else {
         	mSensorFusion.stop();
-        }
+        }*/
         // Sensor Fusion end
     }
     
@@ -2482,8 +2482,10 @@ public class Activity extends ContextThemeWrapper
         }
         
         // Sensor Fusion start
-        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-        	mSensorFusion.dispatchTouchEvent(ev);
+        if (isSBSEnabled() && getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            int width = getWindow().getDecorView().getWidth();
+            int height = getWindow().getDecorView().getHeight();		
+            ev = mSensorFusion.redirectTouchEvent(ev, width, height);
         }
         // Sensor Fusion end
         
@@ -5395,6 +5397,6 @@ public class Activity extends ContextThemeWrapper
     }
     
     // Sensor Fusion start
-    protected SensorFusion2 mSensorFusion;
+    protected SensorFusionManager mSensorFusion;
     // Sensor Fusion end
 }

@@ -114,6 +114,8 @@ import android.accounts.AccountManager;
 import android.accounts.IAccountManager;
 import android.app.admin.DevicePolicyManager;
 
+import com.aether.houyi.ISensorFusion;
+import com.aether.houyi.SensorFusionManager;
 import com.android.internal.app.IAppOpsService;
 import com.android.internal.os.IDropBoxManagerService;
 
@@ -583,6 +585,13 @@ class ContextImpl extends Context {
                     IIrdaManager service = IIrdaManager.Stub.asInterface(b);
                     return new IrdaManager(service);
                 }});
+				
+        registerService(SENSOR_FUSION_SERVICE, new StaticServiceFetcher() {
+                public Object createStaticService() {
+                    IBinder b = ServiceManager.getService(SENSOR_FUSION_SERVICE);
+                    ISensorFusion service = ISensorFusion.Stub.asInterface(b);
+                    return new SensorFusionManager(service);
+                }});				
     }
 
     static ContextImpl getImpl(Context context) {

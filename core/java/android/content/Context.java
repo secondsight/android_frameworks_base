@@ -2310,7 +2310,9 @@ public abstract class Context {
      * @hide
      */
     public static final String APP_OPS_SERVICE = "appops";
-
+	
+    public static final String SENSOR_FUSION_SERVICE = "sensor_fusion";
+	
     /**
      * Determine whether the given permission is allowed for a particular
      * process and user ID running in the system.

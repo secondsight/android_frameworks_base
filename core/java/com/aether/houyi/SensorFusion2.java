@@ -1,6 +1,5 @@
 package com.aether.houyi;
 
-import android.app.Activity;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -38,6 +37,8 @@ public class SensorFusion2 implements SensorEventListener {
     // interface begin
     public float mAzimuth;
     public float mInclination;
+    public float mClampedAzimuth;
+    public float mClampedInclination;
     public HCamera mCam = new HCamera(new HVector(0, 0, 0), new HVector(0, 0, -1), 0);
     public float mInitInclination;
     public float mInitAzimuth;
@@ -54,7 +55,7 @@ public class SensorFusion2 implements SensorEventListener {
     private static final int SENSOR_INIT_DELAY = 100;
     private static final int SENSOR_WAITING_COUNT = 300;
     
-    private Activity mActivity;
+    private Context mContext;
     private SensorManager mSensorManager;
 
     // angular speeds from gyro
@@ -141,27 +142,26 @@ public class SensorFusion2 implements SensorEventListener {
     private float mLastI;
     
     private int mScreenRotation;
-    private static SensorFusion2 mIns;
     
-    public static synchronized SensorFusion2 getInstance(Activity activity) {
-        if (mIns == null) {
-            mIns = new SensorFusion2();
-        }
-        
-        mIns.mActivity = activity;
-        mIns.mSensorManager = (SensorManager)activity.getSystemService(Context.SENSOR_SERVICE);
-        return mIns;
+    public SensorFusion2(Context context) {
+        mContext = context;
+        mSensorManager = (SensorManager)context.getSystemService(Context.SENSOR_SERVICE);
     }
     
-    private SensorFusion2() {
-    }
-    
-    public float getAzimuth() {
+    private float getAbsoluteAzimuth() {
         return fusedOrientationFinal[0];
     }
     
-    public float getInclination() {
+    private float getAbsoluteInclination() {
         return -fusedOrientationFinal[2];
+    }    
+
+    public float getAzimuth() {
+        return mClampedAzimuth;
+    }
+    
+    public float getInclination() {
+        return mClampedInclination;
     }    
     
     public void resetSenorInitialValues() {
@@ -173,7 +173,7 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     public void start() {
-        if(mSensorManager != null){
+        if(!mIsActive & mSensorManager != null){
             mSensorManager.registerListener(this,
                     mSensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY),
                     SensorManager.SENSOR_DELAY_FASTEST);
@@ -193,10 +193,12 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     public void stop() {
-        if(mSensorManager != null){
+        if(mIsActive && mSensorManager != null){
             mSensorManager.unregisterListener(this);
+            reset();
+            resetSenorInitialValues();
+            mIsActive = false;
         }
-        mIsActive = false;
     }
     
     public void reset() { 
@@ -207,7 +209,12 @@ public class SensorFusion2 implements SensorEventListener {
         // initialise gyroMatrix with identity matrix
         gyroMatrix[0] = 1.0f; gyroMatrix[1] = 0.0f; gyroMatrix[2] = 0.0f;
         gyroMatrix[3] = 0.0f; gyroMatrix[4] = 1.0f; gyroMatrix[5] = 0.0f;
-        gyroMatrix[6] = 0.0f; gyroMatrix[7] = 0.0f; gyroMatrix[8] = 1.0f;      
+        gyroMatrix[6] = 0.0f; gyroMatrix[7] = 0.0f; gyroMatrix[8] = 1.0f;    
+
+		 mAzimuth = 0;
+		 mInclination = 0;
+		 mClampedAzimuth = 0;
+		 mClampedInclination = 0;		
     }
     
     public void setScreenRotation(int rotation) {
@@ -218,18 +225,16 @@ public class SensorFusion2 implements SensorEventListener {
         }        
     }
 
-    public void dispatchTouchEvent(MotionEvent ev) {
+    public void dispatchTouchEvent(MotionEvent ev, float width, float height) {
         // for testing app, set mOverrideTouchEvent false and override dispatchTouchEvent in Activity
         // if mirroring is turned off, no need to do anything
         // for mouse event, nothing to do
-    	if (!mOverrideTouchEvent || !mMirrable || !mActivity.isSBSEnabled()
+    	if (!mOverrideTouchEvent || !mMirrable
     	        || ev.getSource() == InputDevice.SOURCE_MOUSE) {
     	    return;
     	}
         
         boolean print = ev.getAction() == MotionEvent.ACTION_DOWN;
-        float width = mActivity.getWindow().getDecorView().getWidth();
-        float height = mActivity.getWindow().getDecorView().getHeight();
         int o = mScreenRotation;
         
         float azimuth = mAzimuth;
@@ -483,8 +488,8 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     private void calculateFusedOrientation() {
-        int o = mActivity.getWindowManager().getDefaultDisplay().getRotation();
-        setScreenRotation(o);
+        //int o = mActivity.getWindowManager().getDefaultDisplay().getRotation();
+        //setScreenRotation(o);
         
         float oneMinusCoeff = 1.0f - FILTER_COEFFICIENT;
         
@@ -540,8 +545,8 @@ public class SensorFusion2 implements SensorEventListener {
         System.arraycopy(fusedOrientation, 0, gyroOrientation, 0, 3);
         fusedOrientationFinal = lowPass(fusedOrientation.clone(), fusedOrientationFinal, 0.2f);
         
-        setAzimuth(getAzimuth());
-        setInclination(getInclination());
+        setAzimuth(getAbsoluteAzimuth());
+        setInclination(getAbsoluteInclination());
         
         mTick++;
     }
@@ -732,6 +737,8 @@ public class SensorFusion2 implements SensorEventListener {
     }
     
     private void notifyTrackDataChanged(float azimuth, float inclination) {
+        mClampedAzimuth = azimuth;
+        mClampedInclination = inclination;
         synchronized(mListeners) {
             for (WeakReference<OnTrackDataChangedListener> ref : mListeners) {
                 OnTrackDataChangedListener listener = ref.get();
